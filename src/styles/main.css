@@ -91,7 +91,7 @@
   .game .nominee-caption { min-height: 52px; display: grid; align-items: center; padding: 5px 8px; }
   .game .nominee-caption h3, .game .nominee-caption h3.long-name { font-size: clamp(14px, .9vw, 18px); line-height: 1.3; }
   .event .media-grid.many-items { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
-  .irl .media-grid, .cooking .media-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .irl .media-grid.many-items { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
   .community-drop .media-grid.many-items { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
   .rage .media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(1050px, 100%); justify-self: center; }
   .rage .nominee-media { max-height: none; aspect-ratio: 16/9; }
@@ -111,14 +111,16 @@
   .chat-orbit span { position: absolute; width: 7px; height: 7px; background: var(--cyan); transform: rotate(45deg); }.chat-orbit span:nth-child(1) { left: 2%; top: 4%; }.chat-orbit span:nth-child(2) { right: 1%; top: 35%; background: var(--purple); }.chat-orbit span:nth-child(3) { left: 48%; bottom: 1%; }
   .media-modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 22px; background: #02030bf2; backdrop-filter: blur(18px); }
   .media-dialog { width: min(1480px, 96vw); max-height: 96dvh; overflow: auto; border: 1px solid #65479b; background: radial-gradient(circle at 80% 10%, #2a174755, transparent 38%), #080a13; box-shadow: 0 30px 120px #000, 0 0 45px #9146ff25; padding: 20px; }
+  .media-dialog.video-dialog { height: min(94dvh, 960px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
   .media-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 25px; padding: 2px 2px 16px; }
   .media-dialog-header span { color: var(--cyan); font-size: 14px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; }
   .media-dialog-header h2 { font-family: 'Exo 2', sans-serif; font-style: italic; font-size: clamp(25px, 3vw, 48px); line-height: 1.05; text-transform: uppercase; margin-top: 6px; }
   .media-dialog-header p { color: var(--muted); font-size: 14px; margin-top: 6px; }
   .media-close { width: 46px; height: 46px; flex: 0 0 auto; display: grid; place-items: center; color: var(--text); border: 1px solid #ffffff28; background: #141522; }
   .media-close:hover, .media-close:focus-visible { border-color: var(--cyan); color: var(--cyan); }
-  .video-stage { height: min(64vh, 720px); min-height: 360px; display: grid; place-items: center; position: relative; overflow: hidden; background: #000; border: 1px solid #ffffff1f; }
-  .video-stage video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .video-stage { min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; background: #000; border: 1px solid #ffffff1f; }
+  .video-frame { width: 100%; height: 100%; max-width: 100%; max-height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
+  .video-stage video { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; background: #000; }
   .video-intermission { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 30px; background: radial-gradient(circle, #2f1955, #080a13 62%); }
   .video-intermission > span { color: var(--cyan); font-size: 14px; font-weight: 800; letter-spacing: 3px; }
   .video-intermission h3 { font-family: 'Exo 2', sans-serif; font-style: italic; font-size: clamp(25px, 4vw, 54px); max-width: 900px; }
@@ -126,17 +128,13 @@
   .video-intermission button, .video-error button, .autoplay-start { display: inline-flex; align-items: center; gap: 9px; padding: 12px 18px; color: #fff; background: #6f2bd5; border: 1px solid #aa7cff; font-weight: 800; }
   .video-error { position: absolute; inset: auto 20px 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 16px; background: #280f19ed; border: 1px solid #e25371; color: #fff; }
   .autoplay-start { position: absolute; z-index: 2; }
-  .video-controls-row { display: flex; align-items: center; gap: 9px; padding: 13px 0; border-bottom: 1px solid #ffffff15; }
+  .video-controls-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 13px 0 0; }
   .video-controls-row button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 13px; border: 1px solid #ffffff20; background: #121521; color: var(--text); font-weight: 700; }
   .video-controls-row button:hover:not(:disabled), .video-controls-row button:focus-visible { border-color: var(--cyan); color: var(--cyan); }
   .video-controls-row button:disabled { opacity: .35; }
   .video-controls-row .primary-control { background: #6f2bd5; border-color: #a978ff; color: #fff; }
-  .playlist-settings { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; padding-top: 14px; color: var(--muted); font-size: 14px; }
-  .playlist-settings label { display: flex; align-items: center; gap: 8px; }
-  .playlist-settings input { width: 18px; height: 18px; accent-color: var(--cyan); }
-  .playlist-settings select { color: var(--text); background: #121521; border: 1px solid #ffffff2b; padding: 7px; }
-  .playlist-settings > span { margin-left: auto; }
-  .playlist-settings kbd { color: var(--text); }
+  .video-shortcuts { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .video-shortcuts kbd { color: var(--text); }
   .image-viewer { height: min(78vh, 820px); display: grid; place-items: center; overflow: hidden; background: #02030a; }
   .image-viewer img { width: 100%; height: 100%; object-fit: contain; }
   .card-play { position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #6f2bd5e8; border: 1px solid #c3a8ff; box-shadow: 0 0 30px #9146ff80; opacity: .9; transition: transform .25s, background .25s; pointer-events: none; }
@@ -153,9 +151,7 @@
     .media-dialog { padding: 12px 16px; }
     .media-dialog-header { padding-bottom: 9px; }
     .media-dialog-header h2 { font-size: 30px; }
-    .video-stage { height: 45vh; min-height: 260px; }
     .video-controls-row { padding: 9px 0; }
-    .playlist-settings { padding-top: 9px; }
   }
   @media (max-width: 1100px) and (min-width: 801px) {
     .present-header-label { letter-spacing: 0; }
@@ -236,9 +232,8 @@
     .media-dialog { width: 100vw; height: 100dvh; max-height: none; padding: 12px; }
     .media-dialog-header { padding-bottom: 10px; }
     .media-dialog-header h2 { font-size: 24px; }
-    .video-stage { height: 48dvh; min-height: 220px; }
     .video-controls-row { flex-wrap: wrap; }
-    .playlist-settings > span { display: none; }
+    .video-shortcuts { display: none; }
     .image-viewer { height: calc(100dvh - 100px); }
   }
   @media (max-width: 520px) {
@@ -289,12 +284,10 @@
     .chatter-statement { text-align: center; order: -1; }.chatter-statement .eyebrow { justify-content: center; }.chatter-statement p { margin-inline: auto; }
     .chat-window { justify-self: center; max-width: 360px; }.chat-lines > span { grid-template-columns: 24px 1fr; }
     .event .media-grid.many-items, .community-drop .media-grid.many-items { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(0, 1fr)); }
-    .irl .media-grid, .cooking .media-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: 1fr; }
+    .irl .media-grid.many-items { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
     .card-play { width: 34px; height: 34px; }.card-play svg { width: 15px; }
     .media-dialog-header p { font-size: 12px; }
-    .video-stage { height: 42dvh; min-height: 180px; }
     .video-controls-row button { flex: 1 1 auto; padding: 8px; font-size: 13px; }
-    .playlist-settings { gap: 8px 14px; }
   }
 }
 @layer base {

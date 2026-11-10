@@ -29,12 +29,12 @@ test('контраст WCAG AA на всех сценах, обзоре, арх�
     const response = await route.fetch();
     await route.fulfill({ response, body: (await response.text()).replace('winner: null', 'winner: { id: "chatter-winner", name: "test_chatter", media: { src: "/assets/avatars/vip/alikgafuroff.png", alt: "Тестовая аватарка" } }').replace('ceremonyPublished: false', 'ceremonyPublished: true') });
   });
-  await page.goto('/present?scene=4');
+  await page.goto('/present?scene=20');
   await page.getByRole('button', { name: /Объявить победителя/ }).click();
   await expect(page.getByTestId('winner-result')).toBeVisible();
   await audit('Раскрытый победитель (тест)');
   await page.goto('/results'); await audit('Открытый архив (тест)');
-  await page.screenshot({ path: 'artifacts/screenshots-v4/08-results-TEST-ONLY.png', fullPage: true });
+  await page.screenshot({ path: 'artifacts/screenshots-v5/08-results-TEST-ONLY.png', fullPage: true });
   await page.goto('/');
   await page.locator('.hero-actions .primary').hover();
   await page.waitForTimeout(250);
@@ -42,7 +42,7 @@ test('контраст WCAG AA на всех сценах, обзоре, арх�
   await page.locator('.category-tile').first().hover();
   await page.waitForTimeout(300);
   await audit('Обзор: карточка при наведении');
-  await page.goto('/present?scene=7');
+  await page.goto('/present?scene=5');
   await page.getByRole('button', { name: 'Смотреть видео: Red Dead Redemption 2' }).click();
   await audit('Модальный видеоплеер');
   await page.keyboard.press('Escape');
@@ -59,9 +59,9 @@ test('размеры текста и сетки заполненных номи�
       const sizes = await page.locator(selector).evaluateAll(els => els.map(el => parseFloat(getComputedStyle(el).fontSize)));
       expect(Math.min(...sizes), selector).toBeGreaterThanOrEqual(selector === '.hero-description' ? 18 : selector === '.category-tile p' ? 16 : 14);
     }
-    for (const scene of [5, 7]) {
+    for (const scene of [3, 5]) {
       await page.goto(`/present?scene=${scene}`);
-      await expect(page.getByTestId('nominee-card')).toHaveCount(scene === 5 ? 8 : 10);
+      await expect(page.getByTestId('nominee-card')).toHaveCount(scene === 3 ? 8 : 10);
       const layout = await page.locator('.nominee-card').evaluateAll(cards => cards.map(card => {
         const image = card.querySelector('img')!, title = card.querySelector('h3')!;
         const c = card.getBoundingClientRect(), i = image.getBoundingClientRect(), t = title.getBoundingClientRect();
@@ -76,7 +76,7 @@ test('размеры текста и сетки заполненных номи�
         expect(card.font).toBeGreaterThanOrEqual(14);
       }
     }
-    for (const [scene, count] of [[9, 5], [11, 3], [13, 3], [19, 7], [21, 2]] as const) {
+    for (const [scene, count] of [[7, 5], [9, 6], [13, 7], [15, 2]] as const) {
       await page.goto(`/present?scene=${scene}`);
       await expect(page.getByTestId('nominee-card')).toHaveCount(count);
       const overflow = await page.locator('.nominee-card').evaluateAll(cards => cards.filter(card => card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1).length);

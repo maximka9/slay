@@ -23,7 +23,7 @@ test('production: 38 превью, 47 видео, маршруты и локал
     expect(response.headers()['content-type'], item.src).toMatch(/^video\/mp4/);
     expect(Number(response.headers()['content-length']), item.src).toBe((await stat(`public${item.src}`)).size);
   }
-  for (const route of ['/', '/awards', '/present?scene=5', '/present?scene=7', '/present?scene=9', '/present?scene=11', '/present?scene=13', '/present?scene=19', '/present?scene=21', '/results']) {
+  for (const route of ['/', '/awards', '/present?scene=3', '/present?scene=5', '/present?scene=7', '/present?scene=9', '/present?scene=13', '/present?scene=15', '/present?scene=19', '/present?scene=21', '/results']) {
     await page.goto(route);
     await page.evaluate(() => document.fonts.ready);
     await expect(page.locator('h1')).toBeVisible();

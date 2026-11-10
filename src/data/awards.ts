@@ -33,11 +33,6 @@ export const awards: AwardsConfig = {
   ceremonyPublished: false,
   categories: [
     {
-      id: 'chatter', title: 'Чаттер года', icon: 'message', kind: 'chatter',
-      intro: 'Тот, без кого чат уже невозможно представить. Самый запоминающийся участник комьюнити 2026 года',
-      nominees: [], winnerId: null, winner: null,
-    },
-    {
       id: 'indie-game', title: 'Инди-игра года', icon: 'sparkles', kind: 'poster',
       intro: 'Небольшие студии. Большие впечатления',
       nominees: [
@@ -97,26 +92,20 @@ export const awards: AwardsConfig = {
       id: 'event', title: 'Ивент года', icon: 'zap', kind: 'frame', intro: 'Событие, которое объединило зрителей',
       nominees: [
         { id: 'event-chgk', name: 'Что? Где? Когда?', media: { src: '/assets/nominees/event/chgk.png', alt: 'Превью ивента Что? Где? Когда?' }, videos: [video('/assets/nominees/event/videos/chgk-1.mp4', 'Что? Где? Когда?')] },
-        { id: 'event-chudo', name: 'Чудо-поле', media: { src: '/assets/nominees/event/chudo.jpg', alt: 'Превью ивента Чудо-поле' } },
+        { id: 'event-chudo', name: 'Чудо-полес', media: { src: '/assets/nominees/event/chudo.jpg', alt: 'Превью ивента Чудо-полес' } },
         { id: 'event-logika', name: 'Где логика?', media: { src: '/assets/nominees/event/logika.png', alt: 'Превью ивента Где логика?' }, videos: [video('/assets/nominees/event/videos/logika-1.mp4', 'Где логика? — видео 1'), video('/assets/nominees/event/videos/logika-2.mp4', 'Где логика? — видео 2')] },
         { id: 'event-turnir-1', name: 'Новогодний турнир', media: { src: '/assets/nominees/event/turnir1.png', alt: 'Превью Новогоднего турнира' }, videos: [video('/assets/nominees/event/videos/turnir1-1.mp4', 'Новогодний турнир — видео 1'), video('/assets/nominees/event/videos/turnir1-2.mp4', 'Новогодний турнир — видео 2')] },
-        { id: 'event-turnir-2', name: 'The International 14', media: { src: '/assets/nominees/event/turnir2.png', alt: 'Превью The International 14' }, videos: [1, 2, 3].map(i => video(`/assets/nominees/event/videos/turnir2-${i}.mp4`, `The International 14 — видео ${i}`)) },
+        { id: 'event-turnir-2', name: 'The International 141', media: { src: '/assets/nominees/event/turnir2.png', alt: 'Превью The International 141' }, videos: [1, 2, 3].map(i => video(`/assets/nominees/event/videos/turnir2-${i}.mp4`, `The International 141 — видео ${i}`)) },
       ],
       winnerId: null,
     },
     {
       id: 'irl', title: 'Лучший ИРЛ с друзьями', icon: 'glass', kind: 'frame',
-      intro: 'Самые запоминающиеся встречи, неожиданные приключения и моменты, когда друзья превращали обычный стрим в настоящее шоу',
+      intro: 'Встречи, поездки, готовка и самые непредсказуемые моменты за пределами игр. Всё, что происходило, когда друзья собирались вместе',
       nominees: [
         { id: 'irl-moscow', name: 'Монстры на каникулах в Москве', media: { src: '/assets/nominees/irl/monsters-moscow.jpg', alt: 'Превью Монстры на каникулах в Москве' }, videos: [1, 2, 3].map(i => video(`/assets/nominees/irl/videos/monsters-moscow-${i}.mp4`, `Монстры на каникулах в Москве — видео ${i}`)) },
         { id: 'irl-part-2', name: 'Монстры на каникулах — часть 2', media: { src: '/assets/nominees/irl/monsters-part-2.jpg', alt: 'Превью Монстры на каникулах — часть 2' }, videos: [1, 2, 3].map(i => video(`/assets/nominees/irl/videos/monsters-part-2-${i}.mp4`, `Монстры на каникулах — часть 2, видео ${i}`)) },
         { id: 'irl-chat-roulette', name: 'Чат-рулетка', media: { src: '/assets/generated-previews/irl/chat-roulette.jpg', alt: 'Кадр из Чат-рулетки' }, videos: [video('/assets/nominees/irl/videos/chat-roulette-1.mp4', 'Чат-рулетка — видео 1'), video('/assets/nominees/irl/videos/chat-roulette-2.mp4', 'Чат-рулетка — видео 2')] },
-      ],
-      winnerId: null,
-    },
-    {
-      id: 'cooking', title: 'Кукинг года', icon: 'chef', kind: 'frame', intro: 'Когда готовка превратилась в шоу',
-      nominees: [
         { id: 'cooking-beef', name: 'Говядина Веллингтон', media: { src: '/assets/nominees/cooking/beef-wellington.jpg', alt: 'Превью Говядина Веллингтон' }, videos: [video('/assets/nominees/cooking/videos/beef-wellington-1.mp4', 'Говядина Веллингтон')] },
         { id: 'cooking-pizza', name: 'Готовим пиццу', media: { src: '/assets/generated-previews/cooking/pizza.jpg', alt: 'Кадр из стрима Готовим пиццу' }, videos: [video('/assets/nominees/cooking/videos/pizza-1.mp4', 'Готовим пиццу — видео 1'), video('/assets/nominees/cooking/videos/pizza-2.mp4', 'Готовим пиццу — видео 2')] },
         { id: 'cooking-moscow', name: 'Московский алкокукинг', media: { src: '/assets/nominees/cooking/moscow-local-cooking.jpg', alt: 'Превью Московский алкокукинг' }, videos: [video('/assets/nominees/cooking/videos/moscow-local-cooking-1.mp4', 'Московский алкокукинг — видео 1'), video('/assets/nominees/cooking/videos/moscow-local-cooking-2.mp4', 'Московский алкокукинг — видео 2')] },
@@ -124,7 +113,6 @@ export const awards: AwardsConfig = {
       winnerId: null,
     },
     { id: 'clip', title: 'Клип года', icon: 'play', kind: 'clip', intro: 'Несколько секунд, которые хочется пересматривать', nominees: slots('clip'), winnerId: null },
-    { id: 'meme', title: 'Мем года', icon: 'smile', kind: 'meme', intro: 'Шутка, которая давно живёт своей жизнью', nominees: slots('meme'), winnerId: null },
     {
       id: 'community-drop', title: 'Завоз от комьюнити', icon: 'package', kind: 'frame',
       intro: 'Когда зрители становились главными героями эфира. Самые яркие моменты, подаренные комьюнити',
@@ -144,6 +132,12 @@ export const awards: AwardsConfig = {
         videos: [video(`/assets/nominees/rage/videos/rage-${i + 1}.mp4`, `Рейдж №${i + 1}`)],
       })),
       winnerId: null,
+    },
+    { id: 'meme', title: 'Мем года', icon: 'smile', kind: 'meme', intro: 'Шутка, которая давно живёт своей жизнью', nominees: slots('meme'), winnerId: null },
+    {
+      id: 'chatter', title: 'Чаттер года', icon: 'message', kind: 'chatter',
+      intro: 'Тот, без кого чат уже невозможно представить. Самый запоминающийся участник комьюнити 2026 года',
+      nominees: [], winnerId: null, winner: null,
     },
   ],
 };
