@@ -34,7 +34,7 @@ test('контраст WCAG AA на всех сценах, обзоре, арх�
   await expect(page.getByTestId('winner-result')).toBeVisible();
   await audit('Раскрытый победитель (тест)');
   await page.goto('/results'); await audit('Открытый архив (тест)');
-  await page.screenshot({ path: 'artifacts/screenshots-v3/07-results-TEST-ONLY.png', fullPage: true });
+  await page.screenshot({ path: 'artifacts/screenshots-v4/08-results-TEST-ONLY.png', fullPage: true });
   await page.goto('/');
   await page.locator('.hero-actions .primary').hover();
   await page.waitForTimeout(250);
@@ -42,11 +42,15 @@ test('контраст WCAG AA на всех сценах, обзоре, арх�
   await page.locator('.category-tile').first().hover();
   await page.waitForTimeout(300);
   await audit('Обзор: карточка при наведении');
+  await page.goto('/present?scene=7');
+  await page.getByRole('button', { name: 'Смотреть видео: Red Dead Redemption 2' }).click();
+  await audit('Модальный видеоплеер');
+  await page.keyboard.press('Escape');
   await mkdir('artifacts', { recursive: true });
   await writeFile('artifacts/contrast-audit.json', JSON.stringify(report, null, 2));
 });
 
-test('размеры текста и сетки 8 инди-игр / 10 игр без обрезки', async ({ page }) => {
+test('размеры текста и сетки заполненных номинаций без обрезки', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   for (const width of [1920, 1366, 1280]) {
     await page.setViewportSize({ width, height: width === 1920 ? 1080 : width === 1366 ? 768 : 720 });
@@ -71,6 +75,12 @@ test('размеры текста и сетки 8 инди-игр / 10 игр б
         expect(card.titleBottom).toBeLessThanOrEqual(card.cardBottom);
         expect(card.font).toBeGreaterThanOrEqual(14);
       }
+    }
+    for (const [scene, count] of [[9, 5], [11, 3], [13, 3], [19, 7], [21, 2]] as const) {
+      await page.goto(`/present?scene=${scene}`);
+      await expect(page.getByTestId('nominee-card')).toHaveCount(count);
+      const overflow = await page.locator('.nominee-card').evaluateAll(cards => cards.filter(card => card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1).length);
+      expect(overflow, `scene ${scene}`).toBe(0);
     }
   }
 });

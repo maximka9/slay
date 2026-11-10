@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, Maximize, Minimize, Settings2, X, RotateCcw, Trophy as TrophyIcon, Grid2X2, EyeOff } from 'lucide-react';
-import { awards, type Category } from '../data/awards';
+import { awards, type Category, type Nominee } from '../data/awards';
 import { createScenes, getWinner, readReveals } from '../data/scenes';
 import { Brand } from '../components/Brand';
 import { Trophy } from '../components/Trophy';
 import { CategoryIcon } from '../components/Icons';
 import { NomineeCard } from '../components/NomineeCard';
 import { MediaView } from '../components/MediaView';
+import { VideoPlayerModal } from '../components/VideoPlayerModal';
 
 const scenes = createScenes(awards);
 const REVEALS_KEY = 'camca63-reveals-2026';
@@ -28,6 +29,7 @@ export function Present() {
   const [lowEffects, setLowEffects] = useState(() => safeRead('camca63-low-effects') === 'true');
   const [clean, setClean] = useState(false);
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement));
+  const [viewer, setViewer] = useState<{ category: Category; nominee: Nominee } | null>(null);
   const revealTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const transitionLock = useRef(0);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -37,7 +39,7 @@ export function Present() {
 
   useEffect(() => { try { sessionStorage.setItem(REVEALS_KEY, JSON.stringify(reveals)); } catch { /* Private browser: in-memory state remains usable. */ } }, [reveals]);
   useEffect(() => { try { sessionStorage.setItem('camca63-low-effects', String(lowEffects)); } catch { /* optional preference */ } }, [lowEffects]);
-  useEffect(() => { setNotice(''); setPhase('idle'); clearTimeout(revealTimer.current); }, [current]);
+  useEffect(() => { setNotice(''); setPhase('idle'); setViewer(null); clearTimeout(revealTimer.current); }, [current]);
   useEffect(() => () => clearTimeout(revealTimer.current), []);
   useEffect(() => {
     const update = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -84,6 +86,7 @@ export function Present() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (viewer) return;
       if (event.key === 'Escape') { setSettings(false); setConfirmReset(false); setClean(false); return; }
       if (settings || event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
       if (event.target instanceof HTMLElement && (event.target.closest('input, textarea, select, [contenteditable="true"]') || (event.target.closest('button, a, video') && [' ', 'Enter'].includes(event.key)))) return;
@@ -99,7 +102,7 @@ export function Present() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [advance, current, jump, reveal, settings, toggleFullscreen]);
+  }, [advance, current, jump, reveal, settings, toggleFullscreen, viewer]);
 
   function nomineeScene(c: Category) {
     if (c.kind === 'chatter') return <div className="nominees-scene chatter-scene">
@@ -116,7 +119,7 @@ export function Present() {
     const nominees = c.nominees;
     return <div className={`nominees-scene ${c.id}`}><div className="scene-heading"><div><div className="eyebrow">НОМИНАЦИЯ {number(awards.categories.indexOf(c) + 1)} <span>/ {number(awards.categories.length)}</span></div><h1 className="sport-title">{c.title}</h1><p>{c.intro}</p></div><div className="scene-category-mark"><CategoryIcon name={c.icon} size={44} /></div></div>
       <div className="nominees-meta"><span>НОМИНАНТЫ</span><span>{nominees.length} номинантов</span></div>
-      <div className={`nominee-grid media-grid ${nominees.length > 4 ? 'many-items' : ''}`} style={{ '--count': nominees.length } as React.CSSProperties}>{nominees.map((n, i) => <NomineeCard key={n.id} nominee={n} category={c} index={i} playable={c.kind === 'clip'} />)}</div>
+      <div className={`nominee-grid media-grid ${nominees.length > 4 ? 'many-items' : ''}`} style={{ '--count': nominees.length } as React.CSSProperties}>{nominees.map((n, i) => <NomineeCard key={n.id} nominee={n} category={c} index={i} playable={c.kind === 'clip'} onOpen={nominee => setViewer({ category: c, nominee })} />)}</div>
     </div>;
   }
 
@@ -134,6 +137,7 @@ export function Present() {
     {notice && <div className="present-notice" role="status">{notice}<button aria-label="Закрыть подсказку" onClick={() => setNotice('')}><X size={16} /></button></div>}
     <footer className="present-footer"><div className="progress-controls"><button className="icon-button" aria-label="Предыдущая сцена" onClick={() => jump(current - 1)} disabled={current === 0 || phase === 'revealing'}><ChevronLeft size={20} /></button><span className="scene-counter"><b>{number(current + 1)}</b> / {number(scenes.length)}</span><button className="icon-button" aria-label="Следующая сцена" onClick={advance} disabled={current === scenes.length - 1 || phase === 'revealing'}><ChevronRight size={20} /></button></div><div className="scene-track">{scenes.map((s, i) => <button key={s.id} className={`${i === current ? 'active' : ''} ${i < current ? 'visited' : ''}`} aria-label={`Сцена ${i + 1}: ${s.categoryId ? awards.categories.find(c => c.id === s.categoryId)?.title : s.type === 'cover' ? 'Обложка' : s.type === 'program' ? 'Программа' : 'Финал'}${s.type === 'winner' ? ' — победитель' : ''}`} aria-current={i === current ? 'step' : undefined} disabled={phase === 'revealing'} onClick={() => jump(i)} />)}</div><div className="presentation-tools"><button className="icon-button" aria-label="Скрыть управление" title="Скрыть управление (H)" onClick={() => setClean(true)}><EyeOff size={18} /></button><button className="icon-button" aria-label="Настройки церемонии" onClick={() => setSettings(true)} ref={settingsButton}><Settings2 size={18} /></button><button className="fullscreen-button" onClick={() => void toggleFullscreen()}>{fullscreen ? <Minimize size={17} /> : <Maximize size={17} />}<span>{fullscreen ? 'Выйти из полноэкранного' : 'На весь экран'}</span><kbd>F</kbd></button></div></footer>
     {clean && <button className="show-controls" aria-label="Показать управление" onClick={() => setClean(false)}><Settings2 size={18} /></button>}
+    {viewer && <VideoPlayerModal category={viewer.category} nominee={viewer.nominee} onClose={() => setViewer(null)} />}
     {settings && <div className="modal-backdrop" onClick={closeSettings}><div className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" ref={dialogRef} onClick={e => e.stopPropagation()} onKeyDown={e => {
       if (e.key !== 'Tab') return;
       const elements = dialogRef.current?.querySelectorAll<HTMLElement>('button, a, input');

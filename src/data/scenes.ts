@@ -13,6 +13,7 @@ export function createScenes(config: AwardsConfig): Scene[] {
 export function validateConfig(config: AwardsConfig): string[] {
   const errors: string[] = [];
   const ids = new Set<string>();
+  const videoSources = new Set<string>();
   for (const category of config.categories) {
     if (!category.id || ids.has(category.id)) errors.push(`Повтор или пустой ID категории: ${category.id}`);
     ids.add(category.id);
@@ -24,6 +25,11 @@ export function validateConfig(config: AwardsConfig): string[] {
       const name = nominee.name.trim().toLowerCase();
       if (name && names.has(name)) errors.push(`${category.title}: повтор имени ${nominee.name}`);
       if (name) names.add(name);
+      for (const item of nominee.videos ?? []) {
+        if (!item.src.trim() || !item.label.trim()) errors.push(`${category.title}: у ${nominee.name || nominee.id} видео должно иметь путь и подпись`);
+        if (videoSources.has(item.src)) errors.push(`${category.title}: видео ${item.src} назначено повторно`);
+        videoSources.add(item.src);
+      }
     }
     if (category.winner && (!category.winner.id.trim() || !category.winner.name.trim())) errors.push(`${category.title}: отдельный победитель должен иметь id и имя`);
     if (category.winnerId !== null && !category.nominees.some(n => n.id === category.winnerId && n.name.trim())) errors.push(`${category.title}: winnerId должен указывать на заполненного участника`);

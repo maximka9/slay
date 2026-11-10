@@ -6,3 +6,11 @@ playwright-report/
 *.log
 *.tsbuildinfo
 .DS_Store
+
+# Исходные медиапапки остаются локально; подготовленные runtime-копии лежат в public/assets.
+alko/
+ivent/
+zavoz/
+рейдж/
+games/*.mp4
+indi/*.mp4

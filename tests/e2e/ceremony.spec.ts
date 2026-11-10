@@ -17,33 +17,65 @@ async function fixture(page: Page, publish = false) {
     await route.fulfill({ response, body });
   });
 }
-test('обзор, чаттер, 8 инди-игр, 10 игр и закрытый архив', async ({ page }) => {
+test('обзор, десять номинаций, заполненные медиакатегории и закрытый архив', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/'); await ready(page);
-  await expect(page.locator('.category-tile')).toHaveCount(8);
-  await expect(page.getByText('8 НОМИНАЦИЙ', { exact: true })).toBeVisible();
-  await mkdir('artifacts/screenshots-v3', { recursive: true });
-  await page.screenshot({ path: 'artifacts/screenshots-v3/01-overview.png', fullPage: true });
+  await expect(page.locator('.category-tile')).toHaveCount(10);
+  await expect(page.getByText('10 НОМИНАЦИЙ', { exact: true })).toBeVisible();
+  await mkdir('artifacts/screenshots-v4', { recursive: true });
+  await page.screenshot({ path: 'artifacts/screenshots-v4/01-overview.png', fullPage: true });
   await page.getByRole('link', { name: 'Итоги', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Архив церемонии пока недоступен' })).toBeVisible();
   await expect(page.locator('.result-winner')).toHaveCount(0);
   await page.goto('/present'); await ready(page);
-  await page.screenshot({ path: 'artifacts/screenshots-v3/00-ceremony-cover.png' });
+  await page.screenshot({ path: 'artifacts/screenshots-v4/00-ceremony-cover.png' });
   await page.goto('/present?scene=3'); await ready(page);
   await expect(page.getByRole('heading', { name: 'ЧАТТЕР ГОДА' })).toBeVisible();
   await expect(page.getByTestId('nominee-card')).toHaveCount(0);
   await expect(page.getByText(/номинантов/i)).toHaveCount(0);
-  await page.screenshot({ path: 'artifacts/screenshots-v3/02-chatter.png' });
+  await page.screenshot({ path: 'artifacts/screenshots-v4/02-chatter.png' });
   await page.goto('/present?scene=5'); await ready(page);
   await expect(page.getByTestId('nominee-card')).toHaveCount(8);
-  await expect(page.getByRole('heading', { name: 'Meccha Chameleon' })).toBeVisible();
-  await page.screenshot({ path: 'artifacts/screenshots-v3/03-indie.png' });
+  await expect(page.getByRole('heading', { name: 'meccha' })).toBeVisible();
+  await page.screenshot({ path: 'artifacts/screenshots-v4/03-indie.png' });
   await page.goto('/present?scene=7'); await ready(page);
   await expect(page.getByTestId('nominee-card')).toHaveCount(10);
   await expect(page.getByRole('heading', { name: 'Clair Obscur: Expedition 33' })).toBeVisible();
-  await page.screenshot({ path: 'artifacts/screenshots-v3/04-games.png' });
+  await page.screenshot({ path: 'artifacts/screenshots-v4/04-games.png' });
+  for (const [scene, count, title] of [[9, 5, 'Ивент года'], [11, 3, 'Лучший ИРЛ с друзьями'], [13, 3, 'Кукинг года'], [19, 7, 'Завоз от комьюнити'], [21, 2, 'Рейдж']] as const) {
+    await page.goto(`/present?scene=${scene}`); await ready(page);
+    await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+    await expect(page.getByTestId('nominee-card')).toHaveCount(count);
+    await page.screenshot({ path: `artifacts/screenshots-v4/scene-${scene}.png` });
+  }
   expect(errors).toEqual([]);
+});
+
+test('встроенный просмотр изображений и очередь видео не переключают сцены', async ({ page }) => {
+  await page.goto('/present?scene=7'); await ready(page);
+  await page.getByRole('button', { name: 'Смотреть видео: Red Dead Redemption 2' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Red Dead Redemption 2' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('video')).toHaveAttribute('src', /rdr-1\.mp4$/);
+  await page.keyboard.press('ArrowRight');
+  await expect(dialog.locator('video')).toHaveAttribute('src', /rdr-2\.mp4$/);
+  await expect(page).toHaveURL(/scene=7/);
+  await page.getByLabel('Пауза между роликами').selectOption('0');
+  await dialog.locator('video').dispatchEvent('ended');
+  await expect(dialog.locator('video')).toHaveAttribute('src', /rdr-3\.mp4$/);
+  const auto = page.getByRole('checkbox', { name: 'Автопереключение' });
+  await expect(auto).toBeChecked();
+  await page.keyboard.press('p');
+  await expect(auto).not.toBeChecked();
+  await page.screenshot({ path: 'artifacts/screenshots-v4/05-video-player.png' });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(/scene=7/);
+  await page.getByRole('button', { name: 'Увеличить изображение: Heavy Rain' }).click();
+  await expect(page.getByRole('dialog', { name: 'Heavy Rain' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Heavy Rain' }).locator('video')).toHaveCount(0);
+  await page.keyboard.press('Escape');
 });
 
 test('ручное раскрытие, защита от пролистывания, сохранение и сброс', async ({ page }) => {
@@ -61,7 +93,7 @@ test('ручное раскрытие, защита от пролистыван�
   await expect(page.getByRole('heading', { name: 'test_chatter' })).toBeVisible();
   await expect(page.getByRole('status')).toHaveCount(0);
   await ready(page);
-  await page.screenshot({ path: 'artifacts/screenshots-v3/05-winner-TEST-ONLY.png' });
+  await page.screenshot({ path: 'artifacts/screenshots-v4/06-winner-TEST-ONLY.png' });
   await page.reload();
   await expect(page.getByTestId('winner-result')).toBeVisible();
   await page.keyboard.press('ArrowRight'); await expect(page).toHaveURL(/scene=5/);
@@ -134,7 +166,7 @@ for (const size of [{ width: 1920, height: 1080 }, { width: 1280, height: 720 },
           return { cardBottom: box.bottom, titleBottom: text.bottom, overflows: title.scrollWidth > title.clientWidth || title.scrollHeight > title.clientHeight, fontSize: parseFloat(getComputedStyle(title).fontSize) };
         }));
         for (const card of cards) { expect(card.overflows).toBe(false); expect(card.titleBottom).toBeLessThanOrEqual(card.cardBottom); expect(card.fontSize).toBeGreaterThanOrEqual(14); }
-        await page.screenshot({ path: `artifacts/screenshots-v3/scene-${scene}-${size.width}.png` });
+        await page.screenshot({ path: `artifacts/screenshots-v4/scene-${scene}-${size.width}.png` });
       }
     }
     expect(errors).toEqual([]);
@@ -155,7 +187,7 @@ test('мобильные страницы, медиа fallback и открыты
     if (path === '/results') await expect(page.locator('.result-winner')).toHaveCount(1);
   }
   await page.goto('/'); await ready(page);
-  await page.screenshot({ path: 'artifacts/screenshots-v3/06-mobile.png', fullPage: true });
+  await page.screenshot({ path: 'artifacts/screenshots-v4/07-mobile.png', fullPage: true });
   await page.route('**/assets/nominees/game/heavyrain.webp', route => route.abort());
   await page.goto('/present?scene=7');
   await expect(page.getByRole('img', { name: 'Изображение Heavy Rain отсутствует' })).toBeVisible();
