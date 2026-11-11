@@ -3,9 +3,10 @@ import { awards } from '../src/data/awards';
 import { createScenes, getWinner, readReveals, validateConfig } from '../src/data/scenes';
 describe('Сценарий и конфигурация', () => {
   it('содержит 21 сцену, девять категорий в порядке церемонии и все медиаматериалы', () => {
-    expect(createScenes(awards).map(s => s.id)).toEqual(['cover', 'program', 'indie-game-0', 'indie-game-winner', 'game-0', 'game-winner', 'event-0', 'event-winner', 'irl-0', 'irl-winner', 'dota-clip-0', 'dota-clip-winner', 'community-drop-0', 'community-drop-winner', 'fail-0', 'fail-winner', 'meme-0', 'meme-winner', 'chatter-0', 'chatter-winner', 'final']);
-    expect(awards.categories.map(c => c.id)).toEqual(['indie-game', 'game', 'event', 'irl', 'dota-clip', 'community-drop', 'fail', 'meme', 'chatter']);
-    expect(awards.categories[8]).toMatchObject({ title: 'Чаттер года', kind: 'chatter', nominees: [], winner: null, winnerId: null });
+    expect(createScenes(awards).map(s => s.id)).toEqual(['cover', 'program', 'indie-game-0', 'indie-game-winner', 'game-0', 'game-winner', 'event-0', 'event-winner', 'irl-0', 'irl-winner', 'dota-clip-0', 'dota-clip-winner', 'community-drop-0', 'community-drop-winner', 'fail-0', 'fail-winner', 'chatter-0', 'chatter-winner', 'custom-award-0', 'custom-award-winner', 'final']);
+    expect(awards.categories.map(c => c.id)).toEqual(['indie-game', 'game', 'event', 'irl', 'dota-clip', 'community-drop', 'fail', 'chatter', 'custom-award']);
+    expect(awards.categories[7]).toMatchObject({ title: 'Чаттер года', kind: 'chatter', nominees: [], winner: null, winnerId: null });
+    expect(awards.categories[8]).toMatchObject({ title: 'Ваша номинация', kind: 'custom', nominees: [], winner: null, winnerId: null });
     expect(validateConfig(awards)).toEqual([]);
     expect(awards.ceremonyPublished).toBe(false);
     expect(awards.categories.every(c => c.winnerId === null)).toBe(true);
@@ -22,7 +23,7 @@ describe('Сценарий и конфигурация', () => {
     expect(awards.categories[5].nominees).toHaveLength(7);
     expect(awards.categories[6]).toMatchObject({ title: 'Фейл года' });
     expect(awards.categories[6].nominees).toHaveLength(8);
-    expect(awards.categories[7].title).toBe('Мем года');
+    expect(awards.categories.some(category => category.id === 'meme')).toBe(false);
     expect(awards.categories.flatMap(c => c.nominees.flatMap(n => n.videos ?? []))).toHaveLength(60);
     expect(awards.categories.flatMap(c => c.nominees.flatMap(n => n.media ? [n.media] : []))).toHaveLength(51);
     expect(new Set(awards.categories.flatMap(c => c.nominees.flatMap(n => n.videos?.map(item => item.src) ?? []))).size).toBe(60);
@@ -32,14 +33,14 @@ describe('Сценарий и конфигурация', () => {
     const config = structuredClone(awards);
     config.categories[0].nominees.push({ ...config.categories[0].nominees[0] });
     config.categories[0].winnerId = 'missing';
-    config.categories[8].winner = { id: '', name: '' };
+    config.categories[7].winner = { id: '', name: '' };
     config.categories.push(structuredClone(config.categories[0]));
     expect(validateConfig(config).length).toBeGreaterThanOrEqual(5);
   });
   it('раскрытия принадлежат текущему winnerId, повреждённое хранилище безопасно', () => {
     const config = structuredClone(awards);
-    config.categories[8].winner = { id: 'chatter-winner', name: 'test_chatter' };
-    expect(getWinner(config.categories[8])?.name).toBe('test_chatter');
+    config.categories[7].winner = { id: 'chatter-winner', name: 'test_chatter' };
+    expect(getWinner(config.categories[7])?.name).toBe('test_chatter');
     expect(readReveals('{bad', config)).toEqual({});
     expect(readReveals('null', config)).toEqual({});
     expect(readReveals('{"chatter":"someone-else"}', config)).toEqual({});

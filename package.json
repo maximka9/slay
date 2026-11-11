@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:production": "playwright test --config playwright.production.config.ts",
-    "test:api": "vitest run tests/api"
+    "test:api": "vitest run tests/api",
+    "test:d1": "node scripts/test-d1-integration.mjs"
   },
   "dependencies": {
     "@fontsource/exo-2": "^5.2.8",

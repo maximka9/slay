@@ -29,7 +29,7 @@ test('контраст WCAG AA на всех сценах, обзоре, арх�
     const response = await route.fetch();
     await route.fulfill({ response, body: (await response.text()).replace('winner: null', 'winner: { id: "chatter-winner", name: "test_chatter", media: { src: "/assets/avatars/vip/alikgafuroff.png", alt: "Тестовая аватарка" } }').replace('ceremonyPublished: false', 'ceremonyPublished: true') });
   });
-  await page.goto('/present?scene=20');
+  await page.goto('/present?scene=18');
   await page.getByRole('button', { name: /Объявить победителя/ }).click();
   await expect(page.getByTestId('winner-result')).toBeVisible();
   await audit('Раскрытый победитель (тест)');

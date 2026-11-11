@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, Maximize, Minimize, Settings2, X, RotateCcw, Trophy as TrophyIcon, Grid2X2, EyeOff } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, Maximize, Minimize, Settings2, X, RotateCcw, Trophy as TrophyIcon, Grid2X2, EyeOff, DoorOpen } from 'lucide-react';
 import { awards, type AwardsConfig, type Category, type Nominee } from '../data/awards';
 import { createScenes, getWinner, readReveals } from '../data/scenes';
 import { Brand } from '../components/Brand';
@@ -13,10 +13,11 @@ import { useAuth } from '../components/AuthProvider';
 import { api } from '../lib/api';
 
 const REVEALS_KEY = 'camca63-reveals-2026';
+const REHEARSAL_REVEALS_KEY = 'camca63-rehearsal-reveals-2026';
 const number = (n: number) => String(n).padStart(2, '0');
 function safeRead(key: string) { try { return sessionStorage.getItem(key); } catch { return null; } }
 
-type CeremonyWinner = { nominationId: string; candidateId: string; name: string; imageUrl: string };
+type CeremonyWinner = { nominationId: string; candidateId: string; name: string; imageUrl: string; awardTitle?: string; authorLogin?: string };
 type CeremonyProblem = { nominationId: string | null; nominationTitle: string | null; code: string; message: string };
 type NoWinner = { nominationId: string; title: string; reason: string };
 
@@ -32,7 +33,17 @@ export function Present() {
       if (import.meta.env.DEV) setConfig(awards);
       return;
     }
-    if (rehearsal) { setConfig(structuredClone(awards)); return; }
+    if (rehearsal) {
+      const rehearsalConfig = structuredClone(awards);
+      for (const category of rehearsalConfig.categories) {
+        category.winnerId = null;
+        category.winner = category.kind === 'custom'
+          ? { id: `rehearsal-${category.id}`, name: 'ПОЛУЧАТЕЛЬ НАГРАДЫ', awardTitle: 'ДЕМОНСТРАЦИОННАЯ НАГРАДА', authorLogin: 'автор_предложения', description: 'Репетиционный результат' }
+          : { id: `rehearsal-${category.id}`, name: 'ДЕМОНСТРАЦИОННЫЙ ПОБЕДИТЕЛЬ', description: 'Репетиционный результат без раскрытия реальных итогов' };
+      }
+      setConfig(rehearsalConfig);
+      return;
+    }
     api<{ ready: boolean; winners: CeremonyWinner[]; noWinners: NoWinner[]; problems: CeremonyProblem[] }>('/api/admin/ceremony').then(result => {
       if (!result.ready) { setReadinessProblems(result.problems); return; }
       const next = structuredClone(awards);
@@ -41,7 +52,7 @@ export function Present() {
         if (!category) continue;
         const nominee = category.nominees.find(item => item.id === winner.candidateId);
         if (nominee) category.winnerId = nominee.id;
-        else category.winner = { id: winner.candidateId, name: winner.name, media: winner.imageUrl ? { src: winner.imageUrl, alt: winner.name } : undefined };
+        else category.winner = { id: winner.candidateId, name: winner.name, awardTitle: winner.awardTitle, authorLogin: winner.authorLogin, media: winner.imageUrl ? { src: winner.imageUrl, alt: winner.name } : undefined };
       }
       for (const item of result.noWinners) {
         const category = next.categories.find(entry => entry.id === item.nominationId);
@@ -53,19 +64,21 @@ export function Present() {
   if (auth.loading || (auth.authenticated && auth.isAdmin && !config && !loadError && !readinessProblems.length)) return <main className="present-access"><Trophy small /><h1>Подготавливаем церемонию</h1></main>;
   if (!auth.authenticated && !import.meta.env.DEV) return <main className="present-access"><Trophy small /><h1>Режим церемонии защищён</h1><p>Войдите через Twitch-аккаунт владельца канала.</p><a className="button primary" href={auth.loginUrl('/present')}>Войти через Twitch</a></main>;
   if (!auth.isAdmin && !import.meta.env.DEV) return <main className="present-access"><Trophy small /><h1>Доступ запрещён</h1><p>Управлять церемонией может только camca63.</p><Link className="button outline" to="/">На главную</Link></main>;
-  if (loadError) return <main className="present-access"><Trophy small /><h1>Результаты недоступны</h1><p>{loadError}</p><button className="button primary" onClick={() => window.location.reload()}>Повторить</button></main>;
-  if (readinessProblems.length) return <main className="present-access"><Trophy small /><h1>Церемония не готова</h1><ul className="ceremony-problems">{readinessProblems.map(problem => <li key={`${problem.code}-${problem.nominationId ?? 'global'}`}>{problem.message}</li>)}</ul><div className="access-actions"><Link className="button primary" to="/admin">Исправить в админ-панели</Link><Link className="button outline" to="/present?rehearsal=1">Открыть репетицию</Link></div></main>;
+  if (loadError) return <main className="present-access"><Trophy small /><h1>Результаты недоступны</h1><p>{loadError}</p><div className="access-actions"><Link className="button outline" to="/admin"><ArrowLeft size={17} /> Назад</Link><button className="button primary" onClick={() => window.location.reload()}>Повторить</button></div></main>;
+  if (readinessProblems.length) return <main className="present-access"><Trophy small /><h1>Церемония не готова</h1><ul className="ceremony-problems">{readinessProblems.map(problem => <li key={`${problem.code}-${problem.nominationId ?? 'global'}`}>{problem.message}</li>)}</ul><div className="access-actions"><Link className="button outline" to="/admin"><ArrowLeft size={17} /> Назад</Link><Link className="button primary" to="/admin">Исправить в админ-панели</Link><Link className="button outline" to="/present?rehearsal=1">Открыть репетицию</Link></div></main>;
   return <PresentStage config={config ?? awards} rehearsal={rehearsal} />;
 }
 
 function PresentStage({ config: awards, rehearsal = false }: { config: AwardsConfig; rehearsal?: boolean }) {
+  const navigate = useNavigate();
   const scenes = createScenes(awards);
   const [params, setParams] = useSearchParams();
   const rawScene = Number(params.get('scene') ?? 1);
   const current = Number.isFinite(rawScene) ? Math.min(scenes.length - 1, Math.max(0, Math.trunc(rawScene) - 1)) : 0;
   const scene = scenes[current];
   const category = awards.categories.find(c => c.id === scene.categoryId);
-  const [reveals, setReveals] = useState(() => readReveals(safeRead(REVEALS_KEY), awards));
+  const revealsKey = rehearsal ? REHEARSAL_REVEALS_KEY : REVEALS_KEY;
+  const [reveals, setReveals] = useState(() => readReveals(safeRead(revealsKey), awards));
   const [phase, setPhase] = useState<'idle' | 'revealing'>('idle');
   const [notice, setNotice] = useState('');
   const [settings, setSettings] = useState(false);
@@ -81,7 +94,7 @@ function PresentStage({ config: awards, rehearsal = false }: { config: AwardsCon
   const revealedWinner = category ? getWinner(category) : undefined;
   const revealed = Boolean(category && revealedWinner && reveals[category.id] === revealedWinner.id);
 
-  useEffect(() => { try { sessionStorage.setItem(REVEALS_KEY, JSON.stringify(reveals)); } catch { /* Private browser: in-memory state remains usable. */ } }, [reveals]);
+  useEffect(() => { try { sessionStorage.setItem(revealsKey, JSON.stringify(reveals)); } catch { /* Private browser: in-memory state remains usable. */ } }, [reveals, revealsKey]);
   useEffect(() => { try { sessionStorage.setItem('camca63-low-effects', String(lowEffects)); } catch { /* optional preference */ } }, [lowEffects]);
   useEffect(() => { setNotice(''); setPhase('idle'); setViewer(null); clearTimeout(revealTimer.current); }, [current]);
   useEffect(() => () => clearTimeout(revealTimer.current), []);
@@ -127,6 +140,14 @@ function PresentStage({ config: awards, rehearsal = false }: { config: AwardsCon
     }, reduced || lowEffects ? 150 : 2000);
   }, [category, scene.type, revealed, phase, lowEffects]);
   const closeSettings = () => { setSettings(false); setConfirmReset(false); requestAnimationFrame(() => settingsButton.current?.focus()); };
+  const exitCeremony = useCallback(async () => {
+    clearTimeout(revealTimer.current);
+    setPhase('idle'); setViewer(null); setSettings(false); setClean(false);
+    try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* Browser may already be leaving fullscreen. */ }
+    const referrer = document.referrer ? new URL(document.referrer) : null;
+    if (referrer?.origin === window.location.origin && window.history.length > 1) navigate(-1);
+    else navigate('/admin');
+  }, [navigate]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -149,6 +170,10 @@ function PresentStage({ config: awards, rehearsal = false }: { config: AwardsCon
   }, [advance, current, jump, reveal, settings, toggleFullscreen, viewer]);
 
   function nomineeScene(c: Category) {
+    if (c.kind === 'custom') return <div className="nominees-scene custom-award-scene">
+      <div className="scene-heading"><div><div className="eyebrow">НОМИНАЦИЯ {number(awards.categories.indexOf(c) + 1)} <span>/ {number(awards.categories.length)}</span></div><h1 className="sport-title">{c.title}</h1><p>{c.intro}</p></div><div className="scene-category-mark"><CategoryIcon name={c.icon} size={44} /></div></div>
+      <div className="custom-award-stage"><CategoryIcon name="sparkles" size={64} /><span>НАГРАДА, ПРИДУМАННАЯ ЗРИТЕЛЕМ</span><h2>ОДНА ИДЕЯ.<br /><em>ОДИН ПОЛУЧАТЕЛЬ.</em></h2><p>Название награды и имя получателя будут раскрыты на следующей сцене.</p></div>
+    </div>;
     if (c.kind === 'chatter') return <div className="nominees-scene chatter-scene">
       <div className="scene-heading"><div><div className="eyebrow">НОМИНАЦИЯ {number(awards.categories.indexOf(c) + 1)} <span>/ {number(awards.categories.length)}</span></div><h1 className="sport-title">{c.title}</h1><p>{c.intro}</p></div><div className="scene-category-mark"><CategoryIcon name={c.icon} size={44} /></div></div>
       <div className="chatter-stage" aria-label="Тематическая сцена Twitch-чата">
@@ -163,23 +188,25 @@ function PresentStage({ config: awards, rehearsal = false }: { config: AwardsCon
     const nominees = c.nominees;
     return <div className={`nominees-scene ${c.id}`}><div className="scene-heading"><div><div className="eyebrow">НОМИНАЦИЯ {number(awards.categories.indexOf(c) + 1)} <span>/ {number(awards.categories.length)}</span></div><h1 className="sport-title">{c.title}</h1><p>{c.intro}</p></div><div className="scene-category-mark"><CategoryIcon name={c.icon} size={44} /></div></div>
       <div className="nominees-meta"><span>НОМИНАНТЫ</span><span>{nominees.length} номинантов</span></div>
-      <div className={`nominee-grid media-grid ${nominees.length > 4 ? 'many-items' : ''}`} style={{ '--count': nominees.length } as React.CSSProperties}>{nominees.map((n, i) => <NomineeCard key={n.id} nominee={n} category={c} index={i} playable={c.kind === 'clip'} onOpen={nominee => setViewer({ category: c, nominee })} />)}</div>
+      <div className={`nominee-grid media-grid ${nominees.length > 4 ? 'many-items' : ''}`} style={{ '--count': nominees.length } as React.CSSProperties}>{nominees.map((n, i) => <NomineeCard key={n.id} nominee={n} category={c} index={i} playable={c.kind === 'clip'} onOpen={n.videos?.length ? nominee => setViewer({ category: c, nominee }) : undefined} />)}</div>
     </div>;
   }
 
-  return <div className={`presentation ${lowEffects ? 'low-effects' : ''} ${clean ? 'clean-mode' : ''} ${phase}`}>
+  const winner = category ? getWinner(category) : undefined;
+  return <div className={`presentation ${lowEffects ? 'low-effects' : ''} ${clean ? 'clean-mode' : ''} ${phase} ${rehearsal ? 'rehearsal-mode' : ''}`}>
+    {rehearsal && <div className="rehearsal-banner">РЕЖИМ РЕПЕТИЦИИ · РЕАЛЬНЫЕ ИТОГИ НЕ ПОКАЗЫВАЮТСЯ</div>}
     <header className="present-header"><Brand /><span className="present-header-label">{scene.type === 'final' ? 'ДО ВСТРЕЧИ НА СТРИМАХ' : 'ИТОГИ ГОДА · ВЫБОР КОМЬЮНИТИ'}</span><span className="edition">2026 <span className="status-dot" /></span></header>
     <main className="scene-viewport" aria-label={`Сцена ${current + 1} из ${scenes.length}`}>
       <div className={`scene scene-${scene.type}`} key={scene.id}>
         {scene.type === 'cover' && <div className="present-cover"><div><div className="eyebrow"><span className="status-dot" /> ЭТО НАШ ГОД. ЭТО НАША ПРЕМИЯ.</div><h1 className="hero-title"><span>CAMCA63</span><span className="outlined">AWARDS</span><span className="year">2026</span></h1><div className="hero-tagline">ИТОГИ ГОДА <span> / </span> ВЫБОР КОМЬЮНИТИ</div><button className="button primary" onClick={advance}>Начать церемонию <ArrowRight size={19} /></button></div><Trophy /></div>}
         {scene.type === 'program' && <div className="program-scene"><div className="eyebrow">ПРОГРАММА ЦЕРЕМОНИИ</div><h1 className="sport-title">{awards.categories.length} НОМИНАЦИЙ. <em>НАШ ГОД.</em></h1><p>Люди, игры и моменты, которые сделали этот год особенным.</p><div className="program-grid">{awards.categories.map((c, i) => <button key={c.id} onClick={() => jump(scenes.findIndex(s => s.categoryId === c.id))}><span className="program-number">{number(i + 1)}</span><CategoryIcon name={c.icon} /><span>{c.title}</span><ArrowUpRightIcon /></button>)}</div></div>}
         {scene.type === 'nominees' && category && nomineeScene(category)}
-        {scene.type === 'winner' && category && <div className={`winner-scene ${revealed ? 'is-revealed' : ''}`}><div className="winner-heading"><div className="eyebrow">ВЫБОР КОМЬЮНИТИ <span>/ {number(awards.categories.indexOf(category) + 1)}</span></div><h1 className="sport-title">{category.title}</h1></div>{revealed ? <div className="winner-result" data-testid="winner-result"><div className="winner-photo"><MediaView nominee={getWinner(category)!} contain={category.kind === 'chatter' || category.kind === 'meme' || category.kind === 'poster'} playable /><div className="winner-seal"><TrophyIcon size={24} /></div></div><div className="winner-copy"><span className="winner-label"><TrophyIcon size={18} /> ПОБЕДИТЕЛЬ 2026</span><h2>{getWinner(category)!.name}</h2><p>{getWinner(category)!.description || 'Этот момент — твой. Эта награда — от комьюнити.'}</p><span className="winner-signature">CAMCA63 AWARDS / ВЫБОР КОМЬЮНИТИ</span></div></div> : <div className="winner-waiting"><Trophy small /><p className="reveal-tease">{phase === 'revealing' ? 'И ПОБЕДИТЕЛЕМ СТАНОВИТСЯ…' : 'ОДНА НОМИНАЦИЯ. ОДНО ИМЯ.'}</p><button className="button primary reveal-button" onClick={reveal} disabled={phase === 'revealing'}><TrophyIcon size={20} />{phase === 'revealing' ? 'Момент триумфа…' : 'Объявить победителя'}<span className="keycap">↵</span></button>{phase === 'idle' && <button className="skip-button" onClick={() => jump(current + 1)}>Пропустить сцену</button>}</div>}</div>}
+        {scene.type === 'winner' && category && <div className={`winner-scene ${revealed ? 'is-revealed' : ''}`}><div className="winner-heading"><div className="eyebrow">ВЫБОР КОМЬЮНИТИ <span>/ {number(awards.categories.indexOf(category) + 1)}</span></div><h1 className="sport-title">{category.title}</h1></div>{revealed && winner ? <div className="winner-result" data-testid="winner-result"><div className={`winner-photo ${!winner.media ? 'text-only' : ''}`}>{winner.media ? <MediaView nominee={winner} contain={category.kind === 'chatter' || category.kind === 'poster'} playable /> : <Trophy small />}<div className="winner-seal"><TrophyIcon size={24} /></div></div><div className="winner-copy"><span className="winner-label"><TrophyIcon size={18} /> {winner.awardTitle || 'ПОБЕДИТЕЛЬ 2026'}</span><h2>{winner.name}</h2><p>{winner.description || 'Этот момент — твой. Эта награда — от комьюнити.'}</p>{winner.authorLogin && <span className="winner-author">Предложил: @{winner.authorLogin}</span>}<span className="winner-signature">CAMCA63 AWARDS / ВЫБОР КОМЬЮНИТИ</span></div></div> : <div className="winner-waiting"><Trophy small /><p className="reveal-tease">{phase === 'revealing' ? 'И ПОБЕДИТЕЛЕМ СТАНОВИТСЯ…' : 'ОДНА НОМИНАЦИЯ. ОДНО ИМЯ.'}</p><button className="button primary reveal-button" onClick={reveal} disabled={phase === 'revealing'}><TrophyIcon size={20} />{phase === 'revealing' ? 'Момент триумфа…' : 'Объявить победителя'}<span className="keycap">↵</span></button>{phase === 'idle' && <button className="skip-button" onClick={() => jump(current + 1)}>Пропустить сцену</button>}</div>}</div>}
         {scene.type === 'final' && <div className="final-scene"><div className="eyebrow">CAMCA63 AWARDS / 2026</div><h1 className="hero-title"><span>ЭТО БЫЛ</span><span className="outlined">НАШ ГОД.</span></h1><p>Спасибо каждому, кто был частью camca63.</p><span className="final-signoff">ДО ВСТРЕЧИ НА СТРИМАХ <span>↗</span></span><div className="final-actions"><Link to="/" className="button outline"><ArrowLeft size={17} /> На главную</Link>{awards.ceremonyPublished && <Link to="/results" className="button primary">Итоги церемонии <ArrowRight size={17} /></Link>}</div></div>}
       </div>
     </main>
     {notice && <div className="present-notice" role="status">{notice}<button aria-label="Закрыть подсказку" onClick={() => setNotice('')}><X size={16} /></button></div>}
-    <footer className="present-footer"><div className="progress-controls"><button className="icon-button" aria-label="Предыдущая сцена" onClick={() => jump(current - 1)} disabled={current === 0 || phase === 'revealing'}><ChevronLeft size={20} /></button><span className="scene-counter"><b>{number(current + 1)}</b> / {number(scenes.length)}</span><button className="icon-button" aria-label="Следующая сцена" onClick={advance} disabled={current === scenes.length - 1 || phase === 'revealing'}><ChevronRight size={20} /></button></div><div className="scene-track">{scenes.map((s, i) => <button key={s.id} className={`${i === current ? 'active' : ''} ${i < current ? 'visited' : ''}`} aria-label={`Сцена ${i + 1}: ${s.categoryId ? awards.categories.find(c => c.id === s.categoryId)?.title : s.type === 'cover' ? 'Обложка' : s.type === 'program' ? 'Программа' : 'Финал'}${s.type === 'winner' ? ' — победитель' : ''}`} aria-current={i === current ? 'step' : undefined} disabled={phase === 'revealing'} onClick={() => jump(i)} />)}</div><div className="presentation-tools"><button className="icon-button" aria-label="Скрыть управление" title="Скрыть управление (H)" onClick={() => setClean(true)}><EyeOff size={18} /></button><button className="icon-button" aria-label="Настройки церемонии" onClick={() => setSettings(true)} ref={settingsButton}><Settings2 size={18} /></button><button className="fullscreen-button" onClick={() => void toggleFullscreen()}>{fullscreen ? <Minimize size={17} /> : <Maximize size={17} />}<span>{fullscreen ? 'Выйти из полноэкранного' : 'На весь экран'}</span><kbd>F</kbd></button></div></footer>
+    <footer className="present-footer"><div className="progress-controls"><button className="exit-ceremony" onClick={() => void exitCeremony()} disabled={phase === 'revealing'}><DoorOpen size={18} /> Выйти</button><button className="icon-button" aria-label="Предыдущая сцена" onClick={() => jump(current - 1)} disabled={current === 0 || phase === 'revealing'}><ChevronLeft size={20} /></button><span className="scene-counter"><b>{number(current + 1)}</b> / {number(scenes.length)}</span><button className="icon-button" aria-label="Следующая сцена" onClick={advance} disabled={current === scenes.length - 1 || phase === 'revealing'}><ChevronRight size={20} /></button></div><div className="scene-track">{scenes.map((s, i) => <button key={s.id} className={`${i === current ? 'active' : ''} ${i < current ? 'visited' : ''}`} aria-label={`Сцена ${i + 1}: ${s.categoryId ? awards.categories.find(c => c.id === s.categoryId)?.title : s.type === 'cover' ? 'Обложка' : s.type === 'program' ? 'Программа' : 'Финал'}${s.type === 'winner' ? ' — победитель' : ''}`} aria-current={i === current ? 'step' : undefined} disabled={phase === 'revealing'} onClick={() => jump(i)} />)}</div><div className="presentation-tools"><button className="icon-button" aria-label="Скрыть управление" title="Скрыть управление (H)" onClick={() => setClean(true)}><EyeOff size={18} /></button><button className="icon-button" aria-label="Настройки церемонии" onClick={() => setSettings(true)} ref={settingsButton}><Settings2 size={18} /></button><button className="fullscreen-button" onClick={() => void toggleFullscreen()}>{fullscreen ? <Minimize size={17} /> : <Maximize size={17} />}<span>{fullscreen ? 'Выйти из полноэкранного' : 'На весь экран'}</span><kbd>F</kbd></button></div></footer>
     {clean && <button className="show-controls" aria-label="Показать управление" onClick={() => setClean(false)}><Settings2 size={18} /></button>}
     {viewer && <VideoPlayerModal category={viewer.category} nominee={viewer.nominee} onClose={() => setViewer(null)} />}
     {settings && <div className="modal-backdrop" onClick={closeSettings}><div className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" ref={dialogRef} onClick={e => e.stopPropagation()} onKeyDown={e => {

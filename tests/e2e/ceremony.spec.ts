@@ -23,7 +23,7 @@ test('обзор, девять номинаций в новом порядке, 
   await page.goto('/'); await ready(page);
   await expect(page.locator('.category-tile')).toHaveCount(9);
   await expect(page.getByText('9 НОМИНАЦИЙ', { exact: true })).toBeVisible();
-  await expect(page.locator('.category-tile h3')).toHaveText(['Инди-игра года', 'Игра года', 'Ивент года', 'Лучший ИРЛ с друзьями', 'DOTA 2 — Клип года', 'Завоз от комьюнити', 'Фейл года', 'Мем года', 'Чаттер года']);
+  await expect(page.locator('.category-tile h3')).toHaveText(['Инди-игра года', 'Игра года', 'Ивент года', 'Лучший ИРЛ с друзьями', 'DOTA 2 — Клип года', 'Завоз от комьюнити', 'Фейл года', 'Чаттер года', 'Ваша номинация']);
   await mkdir('artifacts/screenshots-v5', { recursive: true });
   await page.screenshot({ path: 'artifacts/screenshots-v5/01-overview.png', fullPage: true });
   await page.getByRole('link', { name: 'Итоги', exact: true }).click();
@@ -46,11 +46,14 @@ test('обзор, девять номинаций в новом порядке, 
     await expect(page.getByTestId('nominee-card')).toHaveCount(count);
     await page.screenshot({ path: `artifacts/screenshots-v5/scene-${scene}.png` });
   }
-  await page.goto('/present?scene=19'); await ready(page);
+  await page.goto('/present?scene=17'); await ready(page);
   await expect(page.getByRole('heading', { name: 'ЧАТТЕР ГОДА' })).toBeVisible();
   await expect(page.getByTestId('nominee-card')).toHaveCount(0);
   await expect(page.getByText(/номинантов/i)).toHaveCount(0);
   await page.screenshot({ path: 'artifacts/screenshots-v5/02-chatter.png' });
+  await page.goto('/present?scene=19'); await ready(page);
+  await expect(page.getByRole('heading', { name: 'ВАША НОМИНАЦИЯ' })).toBeVisible();
+  await expect(page.getByText('НАГРАДА, ПРИДУМАННАЯ ЗРИТЕЛЕМ')).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -90,10 +93,9 @@ test('плеер показывает полный кадр и автомати�
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(page).toHaveURL(/scene=5/);
-  await page.getByRole('button', { name: 'Увеличить изображение: Heavy Rain' }).click();
-  await expect(page.getByRole('dialog', { name: 'Heavy Rain' })).toBeVisible();
-  await expect(page.getByRole('dialog', { name: 'Heavy Rain' }).locator('video')).toHaveCount(0);
-  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Увеличить изображение: Heavy Rain' })).toHaveCount(0);
+  await page.getByRole('heading', { name: 'Heavy Rain', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Heavy Rain' })).toHaveCount(0);
 });
 
 test('полный видеокадр помещается для материалов всех медиакатегорий', async ({ page }) => {
@@ -134,15 +136,15 @@ test('полный видеокадр помещается для материа
 
 test('ручное раскрытие, защита от пролистывания, сохранение и сброс', async ({ page }) => {
   await fixture(page);
-  await page.goto('/present?scene=20'); await ready(page);
+  await page.goto('/present?scene=18'); await ready(page);
   await expect(page.getByText('test_chatter', { exact: true })).toHaveCount(0);
   await expect(page.locator('.winner-photo img')).toHaveCount(0);
   await page.keyboard.press('ArrowRight');
-  await expect(page).toHaveURL(/scene=20/);
+  await expect(page).toHaveURL(/scene=18/);
   await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: /Момент триумфа/ })).toBeDisabled();
   await page.keyboard.press('ArrowRight');
-  await expect(page).toHaveURL(/scene=20/);
+  await expect(page).toHaveURL(/scene=18/);
   await expect(page.getByTestId('winner-result')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'test_chatter' })).toBeVisible();
   await expect(page.getByRole('status')).toHaveCount(0);
@@ -150,14 +152,14 @@ test('ручное раскрытие, защита от пролистыван�
   await page.screenshot({ path: 'artifacts/screenshots-v5/06-winner-TEST-ONLY.png' });
   await page.reload();
   await expect(page.getByTestId('winner-result')).toBeVisible();
-  await page.keyboard.press('ArrowRight'); await expect(page).toHaveURL(/scene=21/);
+  await page.keyboard.press('ArrowRight'); await expect(page).toHaveURL(/scene=19/);
   await page.waitForTimeout(450); await page.keyboard.press('ArrowLeft');
   await expect(page.getByTestId('winner-result')).toBeVisible();
   await page.getByRole('button', { name: 'Настройки церемонии' }).click();
   await page.getByRole('button', { name: 'Сбросить раскрытия' }).click();
   await page.getByRole('button', { name: 'Да, сбросить' }).click();
   await expect(page).toHaveURL(/scene=1/);
-  await page.goto('/present?scene=20');
+  await page.goto('/present?scene=18');
   await expect(page.getByTestId('winner-result')).toHaveCount(0);
 });
 
@@ -175,9 +177,9 @@ test('пустой победитель, клавиатура, полноэкр�
   await page.waitForTimeout(450); await page.keyboard.press('Space');
   await expect(page).toHaveURL(/scene=2/);
   await page.getByRole('button', { name: 'На весь экран', exact: false }).click();
-  expect(await page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
+  await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
   await page.getByRole('button', { name: /Выйти из полноэкранного/ }).click();
-  expect(await page.evaluate(() => Boolean(document.fullscreenElement))).toBe(false);
+  await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(false);
   await page.getByRole('button', { name: 'Настройки церемонии' }).click();
   await page.getByRole('checkbox').check();
   await expect(page.locator('.presentation')).toHaveClass(/low-effects/);
@@ -252,15 +254,15 @@ test('reduced motion, повреждённое состояние, ввод в �
   await fixture(page);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript(() => sessionStorage.setItem('camca63-reveals-2026', '{invalid'));
-  await page.goto('/present?scene=20');
+  await page.goto('/present?scene=18');
   await expect(page.getByTestId('winner-result')).toHaveCount(0);
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('winner-result')).toBeVisible();
   await page.keyboard.press('ArrowRight');
-  await expect(page).toHaveURL(/scene=21/);
-  await page.goBack(); await expect(page).toHaveURL(/scene=20/);
+  await expect(page).toHaveURL(/scene=19/);
+  await page.goBack(); await expect(page).toHaveURL(/scene=18/);
   await expect(page.getByTestId('winner-result')).toBeVisible();
   await page.evaluate(() => { const input = document.createElement('input'); input.id = 'test-editor'; document.body.append(input); input.focus(); });
   await page.keyboard.press('End');
-  await expect(page).toHaveURL(/scene=20/);
+  await expect(page).toHaveURL(/scene=18/);
 });

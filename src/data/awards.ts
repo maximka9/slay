@@ -7,10 +7,12 @@ export type Nominee = {
   videos?: VideoAsset[];
   description?: string;
   clipUrl?: string;
+  awardTitle?: string;
+  authorLogin?: string;
 };
 export type Category = {
   id: string; title: string; intro: string;
-  kind: 'chatter' | 'poster' | 'frame' | 'clip' | 'meme';
+  kind: 'chatter' | 'custom' | 'poster' | 'frame' | 'clip';
   icon: 'message' | 'sparkles' | 'gamepad' | 'zap' | 'glass' | 'chef' | 'play' | 'smile' | 'package' | 'flame';
   nominees: Nominee[];
   winnerId: string | null;
@@ -23,7 +25,6 @@ export type AwardsConfig = {
   categories: Category[];
 };
 
-const slots = (prefix: string): Nominee[] => Array.from({ length: 4 }, (_, i) => ({ id: `${prefix}-${i + 1}`, name: '' }));
 const mediaBase = (import.meta.env?.VITE_MEDIA_BASE_URL ?? '').replace(/\/$/, '');
 const video = (src: string, label: string): VideoAsset => ({ src: mediaBase ? `${mediaBase}${src}` : src, label });
 
@@ -143,10 +144,14 @@ export const awards: AwardsConfig = {
       })),
       winnerId: null,
     },
-    { id: 'meme', title: 'Мем года', icon: 'smile', kind: 'meme', intro: 'Шутка, которая давно живёт своей жизнью', nominees: slots('meme'), winnerId: null },
     {
       id: 'chatter', title: 'Чаттер года', icon: 'message', kind: 'chatter',
       intro: 'Тот, без кого чат уже невозможно представить. Самый запоминающийся участник комьюнити 2026 года',
+      nominees: [], winnerId: null, winner: null,
+    },
+    {
+      id: 'custom-award', title: 'Ваша номинация', icon: 'sparkles', kind: 'custom',
+      intro: 'Твой шанс придумать собственную награду. Предложи номинацию и того, кто заслуживает её получить',
       nominees: [], winnerId: null, winner: null,
     },
   ],
