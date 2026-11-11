@@ -27,16 +27,21 @@ export type AwardsConfig = {
 
 const mediaBase = (import.meta.env?.VITE_MEDIA_BASE_URL ?? '').replace(/\/$/, '');
 const video = (src: string, label: string): VideoAsset => ({ src: mediaBase ? `${mediaBase}${src}` : src, label });
+const dotaClipNames = ['Вчера моя мне возразить решила...', 'Веселая ферма', 'Выбирай одну шмотку', 'Настучал', 'Бесконечная битва', 'Добрый стример', 'Записки психиатра'];
+const failClipNames = ['Золотые купола', 'Победный вейв', 'В себя поверил?', 'АААААРБУУУУУУЗ', '1000 игр на лансере', 'Опа', 'Отвлекся', 'Прикинь я проиграл...'];
+const communityClipNames = ['Ангельский голос', 'Как я эту игру зае*алась играть', 'Интересный донат', 'Ему нравится', 'Найс тайминг', 'Самарские авиалинии', 'Без посадки авто нет'];
+const categoryOrder = ['indie-game', 'game', 'event', 'dota-clip', 'fail', 'community-drop', 'irl', 'chatter', 'custom-award'];
+const orderCategories = (categories: Category[]) => categories.sort((a, b) => categoryOrder.indexOf(a.id) - categoryOrder.indexOf(b.id));
 
 // Единственный источник контента. Все победители намеренно не заданы.
 export const awards: AwardsConfig = {
   year: 2026,
   channel: 'camca63',
   ceremonyPublished: false,
-  categories: [
+  categories: orderCategories([
     {
       id: 'indie-game', title: 'Инди-игра года', icon: 'sparkles', kind: 'poster',
-      intro: 'Небольшие студии. Большие впечатления',
+      intro: 'Игра на один стрим, но зато какой!',
       nominees: [
         { id: 'indie-1', name: 'BOMBANANA!', media: { src: '/assets/nominees/indie-game/BOMBANANA!.jpeg', alt: 'Обложка BOMBANANA!' } },
         { id: 'indie-2', name: 'Fears to Fathom: Scratch Creek', media: { src: '/assets/nominees/indie-game/Fears to Fathom - Scratch Creek.jpg', alt: 'Обложка Fears to Fathom: Scratch Creek' } },
@@ -57,7 +62,7 @@ export const awards: AwardsConfig = {
     },
     {
       id: 'game', title: 'Игра года', icon: 'gamepad', kind: 'poster',
-      intro: 'Главное игровое впечатление 2026 года',
+      intro: 'Игра, подарившая больше всех эмоций, геймплей которой можно распечатать покадрово и повесить на стену',
       nominees: [
         { id: 'game-1', name: 'Heavy Rain', media: { src: '/assets/nominees/game/heavyrain.webp', alt: 'Обложка Heavy Rain' } },
         {
@@ -91,7 +96,7 @@ export const awards: AwardsConfig = {
       winnerId: null,
     },
     {
-      id: 'event', title: 'Ивент года', icon: 'zap', kind: 'frame', intro: 'Событие, которое объединило зрителей',
+      id: 'event', title: 'Ивент года', icon: 'zap', kind: 'frame', intro: 'Ну самса вообще ивент-менеджер никакой, даже презентацию сделать не может!',
       nominees: [
         { id: 'event-chgk', name: 'Что? Где? Когда? №1', media: { src: '/assets/nominees/event/chgk.png', alt: 'Превью ивента Что? Где? Когда? №1' }, videos: [video('/assets/nominees/event/videos/chgk-1.mp4', 'Что? Где? Когда? №1')] },
         { id: 'event-chgk-2', name: 'Что? Где? Когда? №2', media: { src: '/assets/nominees/event/chgk-2.png', alt: 'Превью ивента Что? Где? Когда? №2' } },
@@ -103,8 +108,8 @@ export const awards: AwardsConfig = {
       winnerId: null,
     },
     {
-      id: 'irl', title: 'Лучший ИРЛ с друзьями', icon: 'glass', kind: 'frame',
-      intro: 'Встречи, поездки, готовка и самые непредсказуемые моменты за пределами игр. Всё, что происходило, когда друзья собирались вместе',
+      id: 'irl', title: 'IRL года', icon: 'glass', kind: 'frame',
+      intro: 'Ваши любимые алкостримы и кукинги',
       nominees: [
         { id: 'irl-moscow', name: 'Монстры на каникулах в Москве', media: { src: '/assets/nominees/irl/monsters-moscow.jpg', alt: 'Превью Монстры на каникулах в Москве' }, videos: [1, 2, 3].map(i => video(`/assets/nominees/irl/videos/monsters-moscow-${i}.mp4`, `Монстры на каникулах в Москве — видео ${i}`)) },
         { id: 'irl-part-2', name: 'Монстры на каникулах — часть 2', media: { src: '/assets/nominees/irl/monsters-part-2.jpg', alt: 'Превью Монстры на каникулах — часть 2' }, videos: [1, 2, 3].map(i => video(`/assets/nominees/irl/videos/monsters-part-2-${i}.mp4`, `Монстры на каникулах — часть 2, видео ${i}`)) },
@@ -117,37 +122,37 @@ export const awards: AwardsConfig = {
     },
     {
       id: 'dota-clip', title: 'DOTA 2 — Клип года', icon: 'play', kind: 'clip',
-      intro: 'Лучшие моменты Dota 2: невероятные мувы, неожиданные развязки и эпизоды, которые хочется пересматривать',
+      intro: 'Куда же без DOTA 2 - 70% стримов проводились в этой игре',
       nominees: Array.from({ length: 7 }, (_, i) => ({
-        id: `dota-clip-${i + 1}`, name: `Dota 2 — клип №${i + 1}`,
-        media: { src: `/assets/generated-previews/dota-clip/dota-clip-${String(i + 1).padStart(2, '0')}.jpg`, alt: `Кадр из Dota 2 — клип №${i + 1}` },
-        videos: [video(`/assets/nominees/dota-clip/videos/dota-clip-${String(i + 1).padStart(2, '0')}.mp4`, `Dota 2 — клип №${i + 1}`)],
+        id: `dota-clip-${i + 1}`, name: dotaClipNames[i],
+        media: { src: `/assets/generated-previews/dota-clip/dota-clip-${String(i + 1).padStart(2, '0')}.jpg`, alt: `Кадр из клипа «${dotaClipNames[i]}»` },
+        videos: [video(`/assets/nominees/dota-clip/videos/dota-clip-${String(i + 1).padStart(2, '0')}.mp4`, dotaClipNames[i])],
       })),
       winnerId: null,
     },
     {
       id: 'community-drop', title: 'Завоз от комьюнити', icon: 'package', kind: 'frame',
-      intro: 'Когда зрители становились главными героями эфира. Самые яркие моменты, подаренные комьюнити',
+      intro: 'Я говорил, что у меня самая сильная аудитория по ауре?',
       nominees: Array.from({ length: 7 }, (_, i) => ({
-        id: `community-drop-${i + 1}`, name: `Завоз №${i + 1}`,
-        media: { src: `/assets/generated-previews/community-drop/community-drop-${i + 1}.jpg`, alt: `Кадр из ролика Завоз №${i + 1}` },
-        videos: [video(`/assets/nominees/community-drop/videos/community-drop-${i + 1}.mp4`, `Завоз №${i + 1}`)],
+        id: `community-drop-${i + 1}`, name: communityClipNames[i],
+        media: { src: `/assets/generated-previews/community-drop/community-drop-${i + 1}.jpg`, alt: `Кадр из клипа «${communityClipNames[i]}»` },
+        videos: [video(`/assets/nominees/community-drop/videos/community-drop-${i + 1}.mp4`, communityClipNames[i])],
       })),
       winnerId: null,
     },
     {
       id: 'fail', title: 'Фейл года', icon: 'flame', kind: 'frame',
-      intro: 'Моменты, когда всё пошло не по плану. Самые нелепые ошибки, неожиданные провалы и ситуации, которые невозможно забыть',
+      intro: 'Классика - тп на т3, не попал по кнопке, носки не та надел.',
       nominees: Array.from({ length: 8 }, (_, i) => ({
-        id: `fail-${i + 1}`, name: `Фейл №${i + 1}`,
-        media: { src: `/assets/generated-previews/fail/fail-${String(i + 1).padStart(2, '0')}.jpg`, alt: `Кадр из ролика Фейл №${i + 1}` },
-        videos: [video(`/assets/nominees/fail/videos/fail-${String(i + 1).padStart(2, '0')}.mp4`, `Фейл №${i + 1}`)],
+        id: `fail-${i + 1}`, name: failClipNames[i],
+        media: { src: `/assets/generated-previews/fail/fail-${String(i + 1).padStart(2, '0')}.jpg`, alt: `Кадр из клипа «${failClipNames[i]}»` },
+        videos: [video(`/assets/nominees/fail/videos/fail-${String(i + 1).padStart(2, '0')}.mp4`, failClipNames[i])],
       })),
       winnerId: null,
     },
     {
       id: 'chatter', title: 'Чаттер года', icon: 'message', kind: 'chatter',
-      intro: 'Тот, без кого чат уже невозможно представить. Самый запоминающийся участник комьюнити 2026 года',
+      intro: 'Самый крутой гей на районе',
       nominees: [], winnerId: null, winner: null,
     },
     {
@@ -155,5 +160,5 @@ export const awards: AwardsConfig = {
       intro: 'Твой шанс придумать собственную награду. Предложи номинацию и того, кто заслуживает её получить',
       nominees: [], winnerId: null, winner: null,
     },
-  ],
+  ]),
 };

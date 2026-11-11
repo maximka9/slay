@@ -85,7 +85,7 @@ $copies = @(
   @('ivent/turnir2 2.mp4', 'public/assets/nominees/event/videos/turnir2-2.mp4'),
   @('ivent/turnir2 3.mp4', 'public/assets/nominees/event/videos/turnir2-3.mp4'),
 
-  # Лучший ИРЛ с друзьями
+  # IRL года
   @('alko/МОНСТРЫ НА КАНИКУЛАХ В МОСКВЕ.jpg', 'public/assets/nominees/irl/monsters-moscow.jpg'),
   @('alko/МОНСТРЫ НА КАНИКУЛАХ ЧАСТЬ 2.jpg', 'public/assets/nominees/irl/monsters-part-2.jpg'),
   @('alko/МОНСТРЫ НА КАНИКУЛАХ В МОСКВЕ 1.mp4', 'public/assets/nominees/irl/videos/monsters-moscow-1.mp4'),

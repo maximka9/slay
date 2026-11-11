@@ -80,6 +80,7 @@ function PresentStage({ config: awards, rehearsal = false }: { config: AwardsCon
   const revealsKey = rehearsal ? REHEARSAL_REVEALS_KEY : REVEALS_KEY;
   const [reveals, setReveals] = useState(() => readReveals(safeRead(revealsKey), awards));
   const [phase, setPhase] = useState<'idle' | 'revealing'>('idle');
+  const [sceneTransition, setSceneTransition] = useState<'idle' | 'out'>('idle');
   const [notice, setNotice] = useState('');
   const [settings, setSettings] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -88,6 +89,7 @@ function PresentStage({ config: awards, rehearsal = false }: { config: AwardsCon
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement));
   const [viewer, setViewer] = useState<{ category: Category; nominee: Nominee } | null>(null);
   const revealTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const sceneTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const transitionLock = useRef(0);
   const dialogRef = useRef<HTMLDivElement>(null);
   const settingsButton = useRef<HTMLButtonElement>(null);
@@ -97,7 +99,7 @@ function PresentStage({ config: awards, rehearsal = false }: { config: AwardsCon
   useEffect(() => { try { sessionStorage.setItem(revealsKey, JSON.stringify(reveals)); } catch { /* Private browser: in-memory state remains usable. */ } }, [reveals, revealsKey]);
   useEffect(() => { try { sessionStorage.setItem('camca63-low-effects', String(lowEffects)); } catch { /* optional preference */ } }, [lowEffects]);
   useEffect(() => { setNotice(''); setPhase('idle'); setViewer(null); clearTimeout(revealTimer.current); }, [current]);
-  useEffect(() => () => clearTimeout(revealTimer.current), []);
+  useEffect(() => () => { clearTimeout(revealTimer.current); clearTimeout(sceneTimer.current); }, []);
   useEffect(() => {
     const update = () => setFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener('fullscreenchange', update);
@@ -108,11 +110,15 @@ function PresentStage({ config: awards, rehearsal = false }: { config: AwardsCon
   }, [settings]);
 
   const jump = useCallback((next: number) => {
-    if (phase === 'revealing' || Date.now() < transitionLock.current) return;
+    if (phase === 'revealing' || sceneTransition === 'out' || Date.now() < transitionLock.current) return;
     if (next < 0 || next >= scenes.length) return;
     transitionLock.current = Date.now() + 420;
-    setParams({ scene: String(next + 1) });
-  }, [phase, setParams]);
+    setSceneTransition('out');
+    sceneTimer.current = setTimeout(() => {
+      setParams({ scene: String(next + 1) });
+      window.requestAnimationFrame(() => setSceneTransition('idle'));
+    }, window.matchMedia('(prefers-reduced-motion: reduce)').matches || lowEffects ? 20 : 240);
+  }, [lowEffects, phase, sceneTransition, scenes.length, setParams]);
   const advance = useCallback(() => {
     if (phase === 'revealing') return;
     if (scene.type === 'winner' && !revealed) {
@@ -191,15 +197,16 @@ function PresentStage({ config: awards, rehearsal = false }: { config: AwardsCon
   }
 
   const winner = category ? getWinner(category) : undefined;
-  return <div className={`presentation ${lowEffects ? 'low-effects' : ''} ${clean ? 'clean-mode' : ''} ${phase} ${rehearsal ? 'rehearsal-mode' : ''}`}>
+  return <div className={`presentation ${lowEffects ? 'low-effects' : ''} ${clean ? 'clean-mode' : ''} ${phase} scene-transition-${sceneTransition} ${rehearsal ? 'rehearsal-mode' : ''}`}>
     {rehearsal && <div className="rehearsal-banner">РЕПЕТИЦИЯ · РЕАЛЬНЫЕ ИТОГИ НЕ ПОКАЗЫВАЮТСЯ</div>}
     <header className="present-header"><Brand /><span className="present-header-label">{scene.type === 'final' ? 'ДО ВСТРЕЧИ НА СТРИМАХ' : 'ИТОГИ ГОДА · ВЫБОР КОМЬЮНИТИ'}</span><span className="edition">2026 <span className="status-dot" /></span></header>
     <main className="scene-viewport" aria-label={`Сцена ${current + 1} из ${scenes.length}`}>
+      <div className="scene-transition-wipe" aria-hidden="true" />
       <div className={`scene scene-${scene.type}`} key={scene.id}>
         {scene.type === 'cover' && <div className="present-cover"><div><div className="eyebrow"><span className="status-dot" /> ЭТО НАШ ГОД. ЭТО НАША ПРЕМИЯ.</div><h1 className="hero-title"><span>CAMCA63</span><span className="outlined">AWARDS</span><span className="year">2026</span></h1><div className="hero-tagline">ИТОГИ ГОДА <span> / </span> ВЫБОР КОМЬЮНИТИ</div><button className="button primary" onClick={advance}>Начать церемонию <ArrowRight size={19} /></button></div><Trophy /></div>}
         {scene.type === 'program' && <div className="program-scene"><div className="eyebrow">ПРОГРАММА ЦЕРЕМОНИИ</div><h1 className="sport-title">{awards.categories.length} НОМИНАЦИЙ. <em>НАШ ГОД.</em></h1><p>Люди, игры и моменты, которые сделали этот год особенным.</p><div className="program-grid">{awards.categories.map((c, i) => <button key={c.id} onClick={() => jump(scenes.findIndex(s => s.categoryId === c.id))}><span className="program-number">{number(i + 1)}</span><CategoryIcon name={c.icon} /><span>{c.title}</span><ArrowUpRightIcon /></button>)}</div></div>}
         {scene.type === 'nominees' && category && nomineeScene(category)}
-        {scene.type === 'winner' && category && <div className={`winner-scene ${revealed ? 'is-revealed' : ''}`}><div className="winner-heading"><div className="eyebrow">ВЫБОР КОМЬЮНИТИ <span>/ {number(awards.categories.indexOf(category) + 1)}</span></div><h1 className="sport-title">{category.title}</h1></div>{revealed && winner ? <div className="winner-result" data-testid="winner-result"><div className={`winner-photo ${!winner.media ? 'text-only' : ''}`}>{winner.media ? <MediaView nominee={winner} contain={category.kind === 'chatter' || category.kind === 'poster'} playable /> : <Trophy small />}<div className="winner-seal"><TrophyIcon size={24} /></div></div><div className="winner-copy"><span className="winner-label"><TrophyIcon size={18} /> {winner.awardTitle || 'ПОБЕДИТЕЛЬ 2026'}</span><h2>{winner.name}</h2><p>{winner.description || 'Этот момент — твой. Эта награда — от комьюнити.'}</p>{winner.authorLogin && <span className="winner-author">Предложил: @{winner.authorLogin}</span>}<span className="winner-signature">CAMCA63 AWARDS / ВЫБОР КОМЬЮНИТИ</span></div></div> : <div className="winner-waiting"><Trophy small /><p className="reveal-tease">{phase === 'revealing' ? 'И ПОБЕДИТЕЛЕМ СТАНОВИТСЯ…' : 'ОДНА НОМИНАЦИЯ. ОДНО ИМЯ.'}</p><button className="button primary reveal-button" onClick={reveal} disabled={phase === 'revealing'}><TrophyIcon size={20} />{phase === 'revealing' ? 'Момент триумфа…' : 'Объявить победителя'}<span className="keycap">↵</span></button>{phase === 'idle' && <button className="skip-button" onClick={() => jump(current + 1)}>Пропустить сцену</button>}</div>}</div>}
+        {scene.type === 'winner' && category && <div className={`winner-scene ${revealed ? 'is-revealed' : ''}`}><div className="winner-effects" aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <i key={i} />)}<span /></div><div className="winner-heading"><div className="eyebrow">ВЫБОР КОМЬЮНИТИ <span>/ {number(awards.categories.indexOf(category) + 1)}</span></div><h1 className="sport-title">{category.title}</h1></div>{revealed && winner ? <div className="winner-result" data-testid="winner-result"><div className={`winner-photo ${!winner.media ? 'text-only' : ''}`}>{winner.media ? <MediaView nominee={winner} contain={category.kind === 'chatter' || category.kind === 'poster'} playable /> : <Trophy small />}<div className="winner-seal"><TrophyIcon size={24} /></div></div><div className="winner-copy"><span className="winner-label"><TrophyIcon size={18} /> {winner.awardTitle || 'ПОБЕДИТЕЛЬ 2026'}</span><h2>{winner.name}</h2><p>{winner.description || 'Этот момент — твой. Эта награда — от комьюнити.'}</p>{winner.authorLogin && <span className="winner-author">Предложил: @{winner.authorLogin}</span>}<span className="winner-signature">CAMCA63 AWARDS / ВЫБОР КОМЬЮНИТИ</span></div></div> : <div className="winner-waiting"><Trophy small /><p className="reveal-tease">{phase === 'revealing' ? 'И ПОБЕДИТЕЛЕМ СТАНОВИТСЯ…' : 'ОДНА НОМИНАЦИЯ. ОДНО ИМЯ.'}</p><button className="button primary reveal-button" onClick={reveal} disabled={phase === 'revealing'}><TrophyIcon size={20} />{phase === 'revealing' ? 'Момент триумфа…' : 'Объявить победителя'}<span className="keycap">↵</span></button>{phase === 'idle' && <button className="skip-button" onClick={() => jump(current + 1)}>Пропустить сцену</button>}</div>}</div>}
         {scene.type === 'final' && <div className="final-scene"><div className="eyebrow">CAMCA63 AWARDS / 2026</div><h1 className="hero-title"><span>ЭТО БЫЛ</span><span className="outlined">НАШ ГОД.</span></h1><p>Спасибо каждому, кто был частью camca63.</p><span className="final-signoff">ДО ВСТРЕЧИ НА СТРИМАХ <span>↗</span></span><div className="final-actions"><Link to="/" className="button outline"><ArrowLeft size={17} /> На главную</Link>{awards.ceremonyPublished && <Link to="/results" className="button primary">Итоги церемонии <ArrowRight size={17} /></Link>}</div></div>}
       </div>
     </main>

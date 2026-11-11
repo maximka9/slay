@@ -36,6 +36,13 @@ export function Vote() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [freeLogin, setFreeLogin] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+
+  useEffect(() => {
+    if (!confirmation) return;
+    const timer = window.setTimeout(() => setConfirmation(''), 900);
+    return () => window.clearTimeout(timer);
+  }, [confirmation]);
 
   useEffect(() => {
     api<VotingData>('/api/nominations').then(setData).catch(err => setError(err instanceof Error ? err.message : 'Не удалось загрузить номинации.'));
@@ -64,6 +71,7 @@ export function Vote() {
       const result = await mutation<{ vote: MyVote }>(`/api/votes/${encodeURIComponent(nomination.id)}`, 'PUT', auth.csrfToken, { candidateId, twitchLogin });
       const candidate = nomination.candidates.find(item => item.id === result.vote.candidateId);
       setVotes(current => ({ ...current, [nomination.id]: { ...result.vote, candidateName: candidate?.name ?? twitchLogin ?? 'Выбранный кандидат', updatedAt: new Date().toISOString() } }));
+      setConfirmation(`vote:${nomination.id}:${result.vote.candidateId ?? twitchLogin ?? ''}`);
       setNotice(`Голос в номинации «${nomination.title}» сохранён.`);
       setFreeLogin('');
       setData(await api<VotingData>('/api/nominations'));
@@ -78,6 +86,7 @@ export function Vote() {
       await mutation('/api/custom-award', 'PUT', auth.csrfToken, { awardTitle, recipient });
       const saved: CustomAwardProposal = { awardTitle: awardTitle.trim(), recipient: recipient.trim(), status: proposal?.status ?? 'valid', updatedAt: new Date().toISOString() };
       setProposal(saved);
+      setConfirmation(`custom:${nomination.id}`);
       setNotice(proposal ? 'Предложение обновлено.' : 'Предложение сохранено. До закрытия голосования его можно изменить.');
     } catch (err) { setError(err instanceof Error ? err.message : 'Не удалось сохранить предложение.'); }
     finally { setPending(''); }
@@ -97,7 +106,7 @@ export function Vote() {
       const selected = votes[nomination.id]?.candidateId;
       const open = nomination.canVote;
       return <section className="vote-nomination" id={`vote-${nomination.id}`} key={nomination.id}><header><div><span className="eyebrow">НОМИНАЦИЯ {String(nominationIndex + 1).padStart(2, '0')} / {String(data.nominations.length).padStart(2, '0')}</span><h2>{nomination.title}</h2><p>{nomination.description}</p></div><span className={`nomination-state ${open ? 'open' : ''}`}>{open ? 'Открыта' : nomination.unavailableReason ?? 'Недоступна'}</span></header>
-        {nomination.id === 'custom-award' ? <form className="custom-award-form" onSubmit={event => { event.preventDefault(); void saveProposal(nomination); }}>
+        {nomination.id === 'custom-award' ? <form className={`custom-award-form ${confirmation === `custom:${nomination.id}` ? 'just-confirmed' : ''}`} onSubmit={event => { event.preventDefault(); void saveProposal(nomination); }}>
           <div className="custom-award-intro"><Sparkles size={30} /><div><b>Придумай собственную награду</b><span>Предложение видишь только ты и команда церемонии. До закрытия голосования его можно обновлять.</span></div></div>
           <label htmlFor="custom-award-title">Название награды <span>{[...awardTitle].length}/80</span></label>
           <input id="custom-award-title" value={awardTitle} onChange={event => setAwardTitle(event.target.value)} maxLength={80} placeholder="Например: Легендарный камбэк года" required disabled={!open || pending === nomination.id} />
@@ -108,7 +117,7 @@ export function Vote() {
         </form> : <>
           {nomination.candidates.length ? <div className={`voting-grid ${nomination.candidates.length > 6 ? 'many' : ''}`}>{nomination.candidates.map((candidate, index) => {
             const nominee = nomineeFor(candidate); const isSelected = selected === candidate.id; const hasVideo = Boolean(nominee.videos?.length);
-            return <article className={`voting-card ${isSelected ? 'selected' : ''}`} key={candidate.id}>
+            return <article className={`voting-card ${isSelected ? 'selected' : ''} ${confirmation === `vote:${nomination.id}:${candidate.id}` ? 'just-confirmed' : ''}`} key={candidate.id}>
               <div className="voting-media"><MediaView nominee={nominee} contain={localCategory.kind === 'poster'} /><i>{String(index + 1).padStart(2, '0')}</i></div>
               <div className="voting-card-copy"><h3>{candidate.name}</h3>{candidate.twitchLogin && <a href={`https://twitch.tv/${candidate.twitchLogin}`} target="_blank" rel="noreferrer">@{candidate.twitchLogin}</a>}</div>
               {hasVideo && <button className="clip-watch-button" onClick={() => setViewer({ category: localCategory, nominee })}><Play size={17} fill="currentColor" /> Смотреть клип</button>}

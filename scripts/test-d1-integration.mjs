@@ -19,10 +19,13 @@ const schema = execute(`
   SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'custom_award%';
   SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'result_publications';
   SELECT id, name, image_url AS imageUrl, sort_order AS sortOrder FROM candidates WHERE nomination_id = 'event' ORDER BY sort_order;
+  SELECT name FROM candidates WHERE nomination_id = 'dota-clip' ORDER BY sort_order;
+  SELECT name FROM candidates WHERE nomination_id = 'fail' ORDER BY sort_order;
+  SELECT name FROM candidates WHERE nomination_id = 'community-drop' ORDER BY sort_order;
 `);
 
 assert.deepEqual(schema[0].results.map(row => row.id), [
-  'indie-game', 'game', 'event', 'irl', 'dota-clip', 'community-drop', 'fail', 'chatter', 'custom-award',
+  'indie-game', 'game', 'event', 'dota-clip', 'fail', 'community-drop', 'irl', 'chatter', 'custom-award',
 ]);
 assert.deepEqual(schema[0].results.map(row => row.sort_order), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
 assert.equal(schema[1].results[0]?.enabled, 0);
@@ -39,6 +42,9 @@ assert.deepEqual(schema[4].results.map(row => [row.id, row.name, row.sortOrder])
   ['event-turnir-2', 'The International 141', 6],
 ]);
 assert.equal(schema[4].results[1]?.imageUrl, '/assets/nominees/event/chgk-2.png');
+assert.deepEqual(schema[5].results.map(row => row.name), ['Вчера моя мне возразить решила...', 'Веселая ферма', 'Выбирай одну шмотку', 'Настучал', 'Бесконечная битва', 'Добрый стример', 'Записки психиатра']);
+assert.deepEqual(schema[6].results.map(row => row.name), ['Золотые купола', 'Победный вейв', 'В себя поверил?', 'АААААРБУУУУУУЗ', '1000 игр на лансере', 'Опа', 'Отвлекся', 'Прикинь я проиграл...']);
+assert.deepEqual(schema[7].results.map(row => row.name), ['Ангельский голос', 'Как я эту игру зае*алась играть', 'Интересный донат', 'Ему нравится', 'Найс тайминг', 'Самарские авиалинии', 'Без посадки авто нет']);
 
 const publicationSettings = execute(`
   SELECT key, value FROM settings WHERE key IN ('publication_cycle', 'custom_award_published') ORDER BY key;
@@ -162,4 +168,4 @@ execute(`
   DELETE FROM users WHERE twitch_user_id = '${testUser}';
 `);
 
-console.log('D1 integration: six event candidates, status transitions, vote preservation, publication cycles and independent custom award disclosure verified.');
+console.log('D1 integration: category order, 22 renamed clips, vote preservation, publication cycles and independent custom award disclosure verified.');

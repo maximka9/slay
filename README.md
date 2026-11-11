@@ -25,10 +25,10 @@ npm run dev:cloudflare
 - `/present?scene=3` — восемь инди-игр;
 - `/present?scene=5` — десять игр года;
 - `/present?scene=7` — ивенты;
-- `/present?scene=9` — ИРЛ с друзьями и кукинг;
-- `/present?scene=11` — семь клипов Dota 2;
+- `/present?scene=9` — семь клипов Dota 2;
+- `/present?scene=11` — восемь фейлов;
 - `/present?scene=13` — завозы от комьюнити;
-- `/present?scene=15` — восемь фейлов;
+- `/present?scene=15` — IRL и кукинги;
 - `/present?scene=19` — чаттер года;
 - `/present?scene=21` — финал;
 - `/results` — архив результатов.
@@ -41,10 +41,10 @@ npm run dev:cloudflare
 1. Инди-игра года
 2. Игра года
 3. Ивент года
-4. Лучший ИРЛ с друзьями
-5. DOTA 2 — Клип года
+4. DOTA 2 — Клип года
+5. Фейл года
 6. Завоз от комьюнити
-7. Фейл года
+7. IRL года
 8. Чаттер года
 9. Ваша номинация
 

@@ -15,14 +15,24 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState('');
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [videoDimensions, setVideoDimensions] = useState<VideoDimensions | null>(null);
   const [frameSize, setFrameSize] = useState<VideoDimensions | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<number | null>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
   const videos = nominee.videos ?? [];
   const currentVideo = videos[videoIndex];
   const isImage = videos.length === 0;
+
+  const requestClose = useCallback(() => {
+    if (closing) return;
+    videoRef.current?.pause();
+    setClosing(true);
+    closeTimer.current = window.setTimeout(onClose, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180);
+  }, [closing, onClose]);
 
   const nextTarget = useCallback(() => {
     if (videoIndex + 1 >= videos.length) return null;
@@ -90,9 +100,14 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
+    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = 'hidden';
     closeRef.current?.focus();
-    return () => { document.body.style.overflow = previousOverflow; };
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+      window.requestAnimationFrame(() => returnFocus.current?.focus());
+    };
   }, []);
 
   useEffect(() => () => {
@@ -148,7 +163,7 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
     const onKey = (event: KeyboardEvent) => {
       event.stopPropagation();
       if ([' ', 'ArrowRight', 'ArrowLeft', 'm', 'M', 'f', 'F', 'а', 'А', 'Escape'].includes(event.key)) event.preventDefault();
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') requestClose();
       else if (!isImage && event.key === ' ') togglePlay();
       else if (!isImage && event.key === 'ArrowRight') next();
       else if (!isImage && event.key === 'ArrowLeft') previous();
@@ -157,7 +172,7 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [isImage, next, onClose, previous, requestVideoFullscreen, togglePlay]);
+  }, [isImage, next, previous, requestClose, requestVideoFullscreen, togglePlay]);
 
   const ended = () => {
     setPlaying(false);
@@ -175,11 +190,11 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
       ? { icon: <Play />, label: 'Смотреть снова' }
       : { icon: playing ? <Pause /> : <Play />, label: playing ? 'Пауза' : 'Воспроизвести' };
 
-  return <div className="media-modal" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+  return <div className={`media-modal ${closing ? 'is-closing' : ''}`} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) requestClose(); }}>
     <div className={`media-dialog ${isImage ? 'image-dialog' : 'video-dialog'}`} role="dialog" aria-modal="true" aria-labelledby="media-dialog-title">
       <header className="media-dialog-header">
         <div><span>{category.title}</span><h2 id="media-dialog-title">{nominee.name}</h2>{!isImage && <p>Видео {videoIndex + 1} из {videos.length} · {currentVideo?.label}</p>}</div>
-        <button ref={closeRef} className="media-close" onClick={onClose} aria-label="Закрыть просмотр"><X /></button>
+        <button ref={closeRef} className="media-close" onClick={requestClose} aria-label="Закрыть просмотр"><X /></button>
       </header>
       {isImage ? <div className="image-viewer"><img src={nominee.media?.src} alt={nominee.media?.alt || nominee.name} /></div> : <>
         <div className="video-stage" ref={stageRef} data-video-width={videoDimensions?.width} data-video-height={videoDimensions?.height}>
