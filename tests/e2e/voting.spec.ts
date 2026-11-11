@@ -33,6 +33,73 @@ test('авторизованный зритель выбирает и меняе
   expect(choices).toEqual(['game-1', 'game-3']);
 });
 
+test('прогресс учитывает только действительные голоса в активных номинациях', async ({ page }) => {
+  await page.route('**/api/me', route => route.fulfill({ json: { authenticated: true, isAdmin: false, csrfToken: 'csrf-test', user: { twitchUserId: '42', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-11-11T00:00:00Z' } } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: {
+    voting: { status: 'open', chatterFreeInput: false },
+    nominations: [nomination, { id: 'custom-award', title: 'Ваша номинация', description: 'Придумайте награду', sortOrder: 9, enabled: true, canVote: true, unavailableReason: null, candidates: [] }],
+  } }));
+  await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: [
+    { nominationId: 'game', candidateId: 'game-1', candidateName: 'Heavy Rain', updatedAt: '2026-11-11T00:00:00Z', status: 'excluded' },
+    { nominationId: 'meme', candidateId: 'meme-1', candidateName: 'Архивный мем', updatedAt: '2026-11-11T00:00:00Z', status: 'valid' },
+  ] } }));
+  await page.route('**/api/my-custom-award', route => route.fulfill({ json: { proposal: { awardTitle: 'Исключённая награда', recipient: 'viewer', status: 'excluded', updatedAt: '2026-11-11T00:00:00Z' } } }));
+
+  await page.goto('/vote');
+  await expect(page.getByText('Заполнено 0 из 2 номинаций')).toBeVisible();
+});
+
+test('ошибка необязательного обновления не отменяет подтверждение сохранённого голоса', async ({ page }) => {
+  let refreshShouldFail = false;
+  await page.route('**/api/me', route => route.fulfill({ json: { authenticated: true, isAdmin: false, csrfToken: 'csrf-test', user: { twitchUserId: '42', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-11-11T00:00:00Z' } } }));
+  await page.route('**/api/nominations', route => {
+    return refreshShouldFail
+      ? route.fulfill({ status: 503, json: { error: 'refresh_failed', message: 'Не удалось обновить список.' } })
+      : route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: false }, nominations: [nomination] } });
+  });
+  await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: [] } }));
+  await page.route('**/api/my-custom-award', route => route.fulfill({ json: { proposal: null } }));
+  await page.route('**/api/votes/game', route => route.fulfill({ json: { vote: { nominationId: 'game', candidateId: 'game-1', candidateName: 'Heavy Rain', updatedAt: '2026-11-11T00:00:00Z', status: 'valid' } } }));
+
+  await page.goto('/vote');
+  await expect(page.getByText('ГОЛОСОВАНИЕ ОТКРЫТО')).toBeVisible();
+  refreshShouldFail = true;
+  await page.getByRole('article').filter({ hasText: 'Heavy Rain' }).getByRole('button', { name: 'Выбрать' }).click();
+  await expect(page.getByText('Голос в номинации «Игра года» сохранён.')).toBeVisible();
+  await expect(page.locator('.vote-message.error')).toHaveCount(0);
+  await expect(page.getByRole('article').filter({ hasText: 'Heavy Rain' }).getByRole('button', { name: 'Мой голос' })).toBeVisible();
+});
+
+test('после ошибки загрузки номинации можно запросить повторно', async ({ page }) => {
+  let allowSuccess = false;
+  let nominationRequests = 0;
+  await page.route('**/api/me', route => route.fulfill({ json: { authenticated: false, isAdmin: false, user: null } }));
+  await page.route('**/api/nominations', route => {
+    nominationRequests += 1;
+    return allowSuccess
+      ? route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: false }, nominations: [nomination] } })
+      : route.fulfill({ status: 503, json: { error: 'temporarily_unavailable', message: 'Номинации временно недоступны.' } });
+  });
+
+  await page.goto('/vote');
+  await expect(page.getByRole('heading', { name: 'НЕ УДАЛОСЬ ЗАГРУЗИТЬ' })).toBeVisible();
+  allowSuccess = true;
+  await page.getByRole('button', { name: 'ПОВТОРИТЬ ЗАГРУЗКУ' }).click();
+  await expect(page.getByText('ГОЛОСОВАНИЕ ОТКРЫТО')).toBeVisible();
+  expect(nominationRequests).toBeGreaterThanOrEqual(2);
+});
+
+test('плеер показывает актуальное имя кандидата из API', async ({ page }) => {
+  const renamed = { ...nomination, candidates: [{ ...nomination.candidates[1], name: 'Resident Evil 4 — новое имя' }] };
+  await page.route('**/api/me', route => route.fulfill({ json: { authenticated: false, isAdmin: false, user: null } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: false }, nominations: [renamed] } }));
+
+  await page.goto('/vote');
+  const card = page.getByRole('article').filter({ hasText: 'Resident Evil 4 — новое имя' });
+  await card.getByRole('button', { name: 'Смотреть клип' }).click();
+  await expect(page.getByRole('dialog', { name: 'Resident Evil 4 — новое имя' })).toBeVisible();
+});
+
 test('серверная причина блокирует категорию независимо от часов браузера', async ({ page }) => {
   await page.route('**/api/me', route => route.fulfill({ json: { authenticated: true, isAdmin: false, csrfToken: 'csrf-test', user: { twitchUserId: '42', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-11-11T00:00:00Z' } } }));
   await page.route('**/api/nominations', route => route.fulfill({ json: {

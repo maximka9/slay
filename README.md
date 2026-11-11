@@ -29,7 +29,8 @@ npm run dev:cloudflare
 - `/present?scene=11` — восемь фейлов;
 - `/present?scene=13` — завозы от комьюнити;
 - `/present?scene=15` — IRL и кукинги;
-- `/present?scene=19` — чаттер года;
+- `/present?scene=17` — чаттер года;
+- `/present?scene=19` — «Ваша номинация»;
 - `/present?scene=21` — финал;
 - `/results` — архив результатов.
 - `/privacy` — состав и сроки хранения данных.
@@ -178,7 +179,7 @@ npm run test:production
 ## Структура
 
 ```text
-src/data/awards.ts                    — категории, карточки, видео и победители
+src/data/awards.ts                    — категории, карточки и локальные медиа
 src/data/scenes.ts                    — генерация 21 сцены и проверка конфигурации
 src/components/NomineeCard.tsx        — интерактивная карточка
 src/components/VideoPlayerModal.tsx   — изображение, плеер и очередь

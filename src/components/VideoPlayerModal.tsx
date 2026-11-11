@@ -21,9 +21,11 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
   const [videoDimensions, setVideoDimensions] = useState<VideoDimensions | null>(null);
   const [frameSize, setFrameSize] = useState<VideoDimensions | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<number | null>(null);
+  const returnFocusFrame = useRef<number | null>(null);
   const returnFocus = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const videos = nominee.videos ?? [];
   const currentVideo = videos[videoIndex];
@@ -115,6 +117,7 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
   }, []);
 
   useEffect(() => {
+    if (returnFocusFrame.current !== null) window.cancelAnimationFrame(returnFocusFrame.current);
     const scroll = { x: window.scrollX, y: window.scrollY };
     const previous = {
       bodyOverflow: document.body.style.overflow,
@@ -132,7 +135,7 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
       document.documentElement.style.overflow = previous.rootOverflow;
       window.scrollTo(scroll.x, scroll.y);
       if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
-      window.requestAnimationFrame(() => returnFocus.current?.focus());
+      returnFocusFrame.current = window.requestAnimationFrame(() => returnFocus.current?.focus());
     };
   }, []);
 
@@ -189,6 +192,24 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       event.stopPropagation();
+      if (event.key === 'Tab') {
+        const dialog = dialogRef.current;
+        const focusable = dialog ? [...dialog.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), video[controls], [tabindex]:not([tabindex="-1"])')].filter(element => !element.hasAttribute('hidden')) : [];
+        if (!focusable.length) {
+          event.preventDefault();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !dialog?.contains(document.activeElement))) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !dialog?.contains(document.activeElement))) {
+          event.preventDefault();
+          first.focus();
+        }
+        return;
+      }
       if ([' ', 'ArrowRight', 'ArrowLeft', 'm', 'M', 'f', 'F', 'а', 'А', 'Escape'].includes(event.key)) event.preventDefault();
       if (event.key === 'Escape') requestClose();
       else if (!isImage && event.key === ' ') togglePlay();
@@ -218,7 +239,7 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
       : { icon: playing ? <Pause /> : <Play />, label: playing ? 'Пауза' : 'Воспроизвести' };
 
   return createPortal(<div className={`media-modal ${closing ? 'is-closing' : ''}`} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) requestClose(); }}>
-    <div className={`media-dialog ${isImage ? 'image-dialog' : 'video-dialog'}`} role="dialog" aria-modal="true" aria-labelledby="media-dialog-title">
+    <div ref={dialogRef} className={`media-dialog ${isImage ? 'image-dialog' : 'video-dialog'}`} role="dialog" aria-modal="true" aria-labelledby="media-dialog-title">
       <header className="media-dialog-header">
         <div><span>{category.title}</span><h2 id="media-dialog-title">{nominee.name}</h2>{!isImage && <p>Видео {videoIndex + 1} из {videos.length} · {currentVideo?.label}</p>}</div>
         <button ref={closeRef} className="media-close" onClick={requestClose} aria-label="Закрыть просмотр"><X /></button>

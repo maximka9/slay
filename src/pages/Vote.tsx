@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronRight, LogIn, LogOut, Play, ShieldCheck, Sparkles, Vote as VoteIcon } from 'lucide-react';
 import { awards, type Category, type Nominee } from '../data/awards';
 import { Layout } from '../components/Layout';
@@ -9,7 +9,9 @@ import { api, mutation, type CustomAwardProposal, type MyVote, type VotingCandid
 
 function nomineeFor(candidate: VotingCandidate): Nominee {
   const local = awards.categories.flatMap(category => category.nominees).find(nominee => nominee.id === candidate.id);
-  return local ?? { id: candidate.id, name: candidate.name, media: candidate.imageUrl ? { src: candidate.imageUrl, alt: candidate.name } : undefined };
+  return local
+    ? { ...local, name: candidate.name, media: local.media ? { ...local.media, alt: candidate.name } : undefined }
+    : { id: candidate.id, name: candidate.name, media: candidate.imageUrl ? { src: candidate.imageUrl, alt: candidate.name } : undefined };
 }
 
 function categoryFor(nomination: VotingNomination): Category {
@@ -37,6 +39,22 @@ export function Vote() {
   const [error, setError] = useState('');
   const [freeLogin, setFreeLogin] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [nominationsLoading, setNominationsLoading] = useState(true);
+  const nominationsRequest = useRef(0);
+
+  const loadNominations = useCallback(async () => {
+    const requestId = ++nominationsRequest.current;
+    setNominationsLoading(true);
+    setError('');
+    try {
+      const result = await api<VotingData>('/api/nominations');
+      if (requestId === nominationsRequest.current) setData(result);
+    } catch (err) {
+      if (requestId === nominationsRequest.current) setError(err instanceof Error ? err.message : 'Не удалось загрузить номинации.');
+    } finally {
+      if (requestId === nominationsRequest.current) setNominationsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!confirmation) return;
@@ -44,9 +62,7 @@ export function Vote() {
     return () => window.clearTimeout(timer);
   }, [confirmation]);
 
-  useEffect(() => {
-    api<VotingData>('/api/nominations').then(setData).catch(err => setError(err instanceof Error ? err.message : 'Не удалось загрузить номинации.'));
-  }, []);
+  useEffect(() => { void loadNominations(); }, [loadNominations]);
 
   useEffect(() => {
     if (!auth.authenticated) { setVotes({}); setProposal(null); return; }
@@ -61,7 +77,10 @@ export function Vote() {
     }).catch(err => setError(err instanceof Error ? err.message : 'Не удалось загрузить сохранённый выбор.'));
   }, [auth.authenticated]);
 
-  const completed = Object.keys(votes).length + (proposal ? 1 : 0);
+  const completed = data?.nominations.reduce((count, nomination) => {
+    if (nomination.id === 'custom-award') return count + (proposal?.status === 'valid' ? 1 : 0);
+    return count + (votes[nomination.id]?.status === 'valid' ? 1 : 0);
+  }, 0) ?? 0;
   const categories = useMemo(() => Object.fromEntries(awards.categories.map(category => [category.id, category])), []);
 
   const choose = async (nomination: VotingNomination, candidateId?: string, twitchLogin?: string) => {
@@ -74,7 +93,11 @@ export function Vote() {
       setConfirmation(`vote:${nomination.id}:${result.vote.candidateId ?? twitchLogin ?? ''}`);
       setNotice(`Голос в номинации «${nomination.title}» сохранён.`);
       setFreeLogin('');
-      setData(await api<VotingData>('/api/nominations'));
+      try {
+        setData(await api<VotingData>('/api/nominations'));
+      } catch {
+        // Голос уже сохранён; обновление списка кандидатов не влияет на результат операции.
+      }
     } catch (err) { setError(err instanceof Error ? err.message : 'Не удалось сохранить голос.'); }
     finally { setPending(''); }
   };
@@ -92,7 +115,7 @@ export function Vote() {
     finally { setPending(''); }
   };
 
-  if (!data) return <Layout><main className="vote-page loading-page"><span className="eyebrow">CAMCA63 AWARDS / VOTE</span><h1>ЗАГРУЖАЕМ <em>НОМИНАЦИИ</em></h1>{error && <p className="form-error" role="alert">{error}</p>}</main></Layout>;
+  if (!data) return <Layout><main className="vote-page loading-page"><span className="eyebrow">CAMCA63 AWARDS / VOTE</span><h1>{nominationsLoading ? <>ЗАГРУЖАЕМ <em>НОМИНАЦИИ</em></> : <>НЕ УДАЛОСЬ <em>ЗАГРУЗИТЬ</em></>}</h1>{error && <><p className="form-error" role="alert">{error}</p><button className="button outline" onClick={() => void loadNominations()} disabled={nominationsLoading}>{nominationsLoading ? 'ЗАГРУЖАЕМ…' : 'ПОВТОРИТЬ ЗАГРУЗКУ'}</button></>}</main></Layout>;
   const statusText = data.voting.status === 'open' ? 'ГОЛОСОВАНИЕ ОТКРЫТО' : data.voting.status === 'closed' ? 'ГОЛОСОВАНИЕ ЗАКРЫТО' : 'ИДЁТ ПОДГОТОВКА';
 
   return <Layout><main className="vote-page">

@@ -79,6 +79,12 @@ test('видеоплеер остаётся в центре viewport и восс
   dialog = page.getByRole('dialog', { name: 'Resident Evil 2' });
   await expectCentered(dialog, { width: 1280, height: 720 });
   await expect(dialog.locator('video')).toHaveCSS('object-fit', 'contain');
+  const close = dialog.getByRole('button', { name: 'Закрыть просмотр' });
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('button', { name: 'Полноэкранное видео' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollBefore);
