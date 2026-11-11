@@ -7,7 +7,7 @@
     {
       "binding": "DB",
       "database_name": "camca63-awards-2026",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "1c3347d2-09d2-4b69-8528-5f9c6faadbaa",
       "preview_database_id": "DB",
       "migrations_dir": "migrations"
     }
