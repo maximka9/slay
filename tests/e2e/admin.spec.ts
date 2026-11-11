@@ -2,30 +2,34 @@ import { expect, test } from '@playwright/test';
 
 const candidates = Array.from({ length: 5 }, (_, index) => ({
   nominationId: 'game', nominationTitle: 'Игра года', candidateId: `game-${index + 1}`,
-  candidateName: `Игра ${index + 1}`, imageUrl: '', voteCount: 10 - index,
+  candidateName: `Игра ${index + 1}`, imageUrl: '', voteCount: index === 0 ? 1 : 0,
 }));
 
 test('админ запускает репетицию, видит причины блокировки и раскрывает компактные таблицы', async ({ page }) => {
   let ceremonyReady = false;
+  let overviewRequests = 0;
+  let voteRequests = 0;
   await page.route('**/api/me', route => route.fulfill({ json: {
     authenticated: true, isAdmin: true, csrfToken: 'csrf-admin',
     user: { twitchUserId: '1', login: 'camca63', displayName: 'camca63', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-01-01T00:00:00Z' },
   } }));
-  await page.route('**/api/admin/overview', route => route.fulfill({ json: {
-    counts: { users: 5, validVotes: 40, excludedVotes: 1 }, recent: { recentUsers: 2 }, lastVote: { lastVoteAt: null },
+  await page.route('**/api/admin/overview', route => { overviewRequests += 1; return route.fulfill({ json: {
+    counts: { users: 5, validVotes: 40, excludedVotes: 1 }, recent: { recentUsers: 2 }, lastVote: { lastVoteAt: '2026-11-11T15:00:00Z' },
     nominations: [{ id: 'game', title: 'Игра года', votes: 5, validVotes: 5 }], settings: { voting_status: 'closed' },
-  } }));
-  await page.route('**/api/admin/votes?*', route => route.fulfill({ json: { votes: [], pagination: { page: 1, limit: 100, total: 0, pages: 1 } } }));
+  } }); });
+  await page.route('**/api/admin/votes?*', route => { voteRequests += 1; return route.fulfill({ json: { votes: [], pagination: { page: 1, limit: 100, total: 0, pages: 1 } } }); });
   await page.route('**/api/admin/results', route => route.fulfill({ json: {
-    snapshot: { id: 'snapshot-test', revision: 1, status: 'final', created_at: '2026-11-11T00:00:00Z' }, dirty: false,
-    entries: candidates.map((item, index) => ({ ...item, rank: index + 1, isWinner: index === 0 ? 1 : 0, isTie: 0, published: 0 })),
+    snapshot: { id: 'snapshot-test', revision: 1, status: 'final', created_at: '2026-11-11T00:00:00Z' }, dirty: true,
+    entries: candidates.map((item, index) => ({ ...item, rank: index === 0 ? 1 : 2, isWinner: index === 0 ? 1 : 0, isTie: 0, published: 0 })),
     liveEntries: candidates.map((item, index) => ({ ...item, percent: 30 - index * 3 })), customAward: null,
     readiness: ceremonyReady
       ? { ready: true, problems: [] }
       : { ready: false, problems: [{ nominationId: 'custom-award', nominationTitle: 'Ваша номинация', code: 'custom_award_selection_missing', message: 'Ваша номинация: выберите предложение для вручения.' }] },
   } }));
   await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'closed', chatterFreeInput: false }, nominations: [{ id: 'game', title: 'Игра года', description: '', sortOrder: 1, enabled: true, canVote: false, unavailableReason: 'Голосование закрыто.', candidates: [] }] } }));
-  await page.route('**/api/admin/candidates', route => route.fulfill({ json: { candidates: [] } }));
+  await page.route('**/api/admin/candidates', route => route.request().method() === 'POST'
+    ? route.fulfill({ status: 500, json: { error: 'Кандидат не добавлен' } })
+    : route.fulfill({ json: { candidates: [] } }));
   await page.route('**/api/admin/custom-awards?*', route => route.fulfill({ json: { proposals: [], customAwardPublished: false, pagination: { page: 1, limit: 200, total: 0, pages: 1 } } }));
   await page.route('**/api/admin/actions?*', route => {
     const url = new URL(route.request().url());
@@ -33,7 +37,7 @@ test('админ запускает репетицию, видит причин�
     const pageNumber = Number(url.searchParams.get('page'));
     const count = pageNumber === 2 ? 5 : limit;
     const actions = Array.from({ length: count }, (_, index) => ({
-      id: (pageNumber - 1) * limit + index + 1, action: 'voting_closed', target_user_id: null, reason: null, comment: null,
+      id: (pageNumber - 1) * limit + index + 1, action: index === 0 ? 'results_no_winner' : 'voting_closed', target_user_id: null, reason: null, comment: null,
       details: '{}', created_at: `2026-11-11T${String(15 - index).padStart(2, '0')}:00:00Z`, admin_twitch_user_id: '1', adminLogin: 'camca63', adminDisplayName: 'camca63',
     }));
     return route.fulfill({ json: { actions, pagination: { page: pageNumber, limit, total: 30, pages: Math.ceil(30 / limit) } } });
@@ -43,6 +47,10 @@ test('админ запускает репетицию, видит причин�
   await expect(page.getByRole('link', { name: /Начать репетицию/ }).first()).toHaveAttribute('href', '/present?rehearsal=1');
   await expect(page.getByRole('button', { name: /Начать церемонию — недоступно/ })).toBeDisabled();
   await expect(page.getByText('Ваша номинация: выберите предложение для вручения.').first()).toBeVisible();
+  await expect(page.getByText('УСТАРЕВШИЙ СНИМОК — НЕ ИСПОЛЬЗОВАТЬ ДЛЯ ЦЕРЕМОНИИ')).toBeVisible();
+  await expect(page.getByText(/АРХИВНЫЙ ЛИДЕР/)).toBeVisible();
+  await expect(page.getByText(/ПОБЕДИТЕЛЬ/)).toHaveCount(0);
+  await expect(page.getByText(/Последний учтённый голос:/)).toBeVisible();
 
   const finalResults = page.locator('#final-results');
   await expect(finalResults.locator('.result-bar')).toHaveCount(3);
@@ -57,8 +65,21 @@ test('админ запускает репетицию, видит причин�
   await expect(liveResults.locator('.result-bar')).toHaveCount(5);
   await expect(page.locator('.admin-section').last().getByRole('heading', { name: 'ПРОМЕЖУТОЧНЫЕ РЕЗУЛЬТАТЫ' })).toBeVisible();
 
+  const overviewBeforeSearch = overviewRequests;
+  const votesBeforeSearch = voteRequests;
+  await page.getByPlaceholder('Ник или Twitch ID').fill('viewer');
+  await expect.poll(() => voteRequests).toBeGreaterThan(votesBeforeSearch);
+  expect(overviewRequests).toBe(overviewBeforeSearch);
+
+  const candidateLogin = page.getByPlaceholder('Twitch login');
+  await candidateLogin.fill('missing_viewer');
+  page.once('dialog', dialog => void dialog.accept());
+  await page.getByRole('button', { name: 'Найти и добавить' }).click();
+  await expect(candidateLogin).toHaveValue('missing_viewer');
+
   const audit = page.locator('.admin-section').filter({ has: page.getByRole('heading', { name: 'ЖУРНАЛ ДЕЙСТВИЙ' }) });
   await expect(audit.locator('.audit-list article')).toHaveCount(3);
+  await expect(audit.getByText('Для номинации выбран статус «Без победителя»').first()).toBeVisible();
   await audit.getByRole('button', { name: 'Показать все события' }).click();
   await expect(audit.locator('.audit-list article')).toHaveCount(25);
   await audit.getByRole('button', { name: 'Следующая →' }).click();
