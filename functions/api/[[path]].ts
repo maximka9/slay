@@ -4,6 +4,7 @@ import { OAUTH_COOKIE, SESSION_COOKIE, SESSION_SECONDS, getSession, now, randomT
 import { authorizeUrl, exchangeCode, resolveTwitchLogin } from '../_lib/twitch';
 import { publicNominations, setSetting, setting } from '../_lib/data';
 import { votingAvailability } from '../_lib/availability';
+import { CUSTOM_AWARD_ID, canExposePublicResults, publicationPlan } from '../_lib/publication';
 
 type JsonObject = Record<string, unknown>;
 
@@ -308,7 +309,11 @@ async function adminCustomAwards(request: Request, env: Env, url: URL) {
     FROM custom_award_proposals p JOIN users u ON u.twitch_user_id = p.twitch_user_id
     LEFT JOIN custom_award_selection s ON s.id = 1 ${statusClause}
     ORDER BY p.updated_at DESC LIMIT ? OFFSET ?`).bind(...bindings, limit, (page - 1) * limit).all();
-  return json({ proposals: proposals.results, pagination: { page, limit, total: total?.count ?? 0, pages: Math.max(1, Math.ceil((total?.count ?? 0) / limit)) } });
+  return json({
+    proposals: proposals.results,
+    customAwardPublished: await setting(env, 'custom_award_published') === '1',
+    pagination: { page, limit, total: total?.count ?? 0, pages: Math.max(1, Math.ceil((total?.count ?? 0) / limit)) },
+  });
 }
 
 async function moderateCustomAward(request: Request, env: Env, twitchUserId: string) {
@@ -385,12 +390,19 @@ async function updateVotingStatus(request: Request, env: Env) {
   const admin = await requireAdmin(request, env); requireCsrf(request, admin);
   const payload = await body<{ status?: string }>(request);
   if (!['preparation', 'open', 'closed'].includes(payload.status ?? '')) throw new ApiError(400, 'Некорректный статус.', 'invalid_status');
+  const previousStatus = await setting(env, 'voting_status');
   const timestamp = now();
   const statements = [
     setSetting(env, 'voting_status', payload.status!, timestamp),
     env.DB.prepare('UPDATE nominations SET voting_status = ? WHERE enabled = 1').bind(payload.status),
   ];
-  statements.push(env.DB.prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)').bind(`voting_${payload.status}`, JSON.stringify(payload), timestamp, admin.twitchUserId));
+  const startsPrivateCycle = previousStatus !== payload.status && (payload.status === 'open' || payload.status === 'preparation');
+  if (startsPrivateCycle) {
+    const currentCycle = Number.parseInt(await setting(env, 'publication_cycle') || '0', 10);
+    statements.push(setSetting(env, 'publication_cycle', String(Number.isFinite(currentCycle) ? currentCycle + 1 : 1), timestamp));
+    statements.push(setSetting(env, 'custom_award_published', '0', timestamp));
+  }
+  statements.push(env.DB.prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)').bind(`voting_${payload.status}`, JSON.stringify({ ...payload, previousStatus, startsPrivateCycle }), timestamp, admin.twitchUserId));
   await env.DB.batch(statements);
   return json({ ok: true, status: payload.status });
 }
@@ -475,6 +487,7 @@ async function finalizeResults(request: Request, env: Env) {
     `).bind(snapshotId),
     setSetting(env, 'current_snapshot_id', snapshotId, timestamp),
     setSetting(env, 'results_dirty', '0', timestamp),
+    setSetting(env, 'custom_award_published', '0', timestamp),
     env.DB.prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)').bind('results_finalize', JSON.stringify({ snapshotId, revision }), timestamp, admin.twitchUserId),
   ]);
   return json({ ok: true, snapshotId, revision, results: await snapshotResults(env, snapshotId) });
@@ -599,15 +612,36 @@ async function publishResults(request: Request, env: Env) {
   const readiness = await ceremonyReadiness(env, request);
   if (!readiness.ready) throw new ApiError(409, readiness.problems.map(problem => problem.message).join(' '), 'ceremony_not_ready');
   const payload = await body<{ nominationIds?: string[] }>(request);
-  const ids = [...new Set((payload.nominationIds ?? []).filter(Boolean))];
+  const available = await env.DB.prepare(`SELECT DISTINCT e.nomination_id AS nominationId
+    FROM result_entries e JOIN nominations n ON n.id = e.nomination_id
+    WHERE e.snapshot_id = ? AND n.enabled = 1 AND n.id <> ? ORDER BY n.sort_order`)
+    .bind(snapshotId, CUSTOM_AWARD_ID).all<{ nominationId: string }>();
+  const availableIds = available.results.map(row => row.nominationId);
+  const plan = publicationPlan(payload.nominationIds, availableIds);
+  const unknownIds = plan.standardNominationIds.filter(id => !availableIds.includes(id));
+  if (unknownIds.length) throw new ApiError(400, `Неизвестные номинации: ${unknownIds.join(', ')}.`, 'invalid_nomination');
+  const publicationCycle = Number.parseInt(await setting(env, 'publication_cycle') || '', 10);
+  if (!Number.isFinite(publicationCycle)) throw new ApiError(409, 'Состояние публикации не инициализировано.', 'publication_state_missing');
   const timestamp = now();
-  const statements = ids.length
-    ? ids.map(id => env.DB.prepare('UPDATE result_entries SET published = 1 WHERE snapshot_id = ? AND nomination_id = ?').bind(snapshotId, id))
-    : [env.DB.prepare('UPDATE result_entries SET published = 1 WHERE snapshot_id = ?').bind(snapshotId)];
+  const statements = plan.standardNominationIds.flatMap(id => [
+    env.DB.prepare('UPDATE result_entries SET published = 1 WHERE snapshot_id = ? AND nomination_id = ?').bind(snapshotId, id),
+    env.DB.prepare(`INSERT INTO result_publications (snapshot_id, nomination_id, publication_cycle, published_at, published_by)
+      VALUES (?, ?, ?, ?, ?) ON CONFLICT(snapshot_id, nomination_id, publication_cycle)
+      DO UPDATE SET published_at = excluded.published_at, published_by = excluded.published_by`)
+      .bind(snapshotId, id, publicationCycle, timestamp, admin.twitchUserId),
+  ]);
+  if (plan.publishCustomAward) {
+    statements.push(setSetting(env, 'custom_award_published', '1', timestamp));
+    statements.push(env.DB.prepare(`INSERT INTO result_publications (snapshot_id, nomination_id, publication_cycle, published_at, published_by)
+      VALUES (?, ?, ?, ?, ?) ON CONFLICT(snapshot_id, nomination_id, publication_cycle)
+      DO UPDATE SET published_at = excluded.published_at, published_by = excluded.published_by`)
+      .bind(snapshotId, CUSTOM_AWARD_ID, publicationCycle, timestamp, admin.twitchUserId));
+  }
   statements.push(env.DB.prepare("UPDATE results_snapshots SET status = 'published' WHERE id = ?").bind(snapshotId));
-  statements.push(env.DB.prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)').bind('results_publish', JSON.stringify({ snapshotId, nominationIds: ids }), timestamp, admin.twitchUserId));
+  const publishedNominationIds = [...plan.standardNominationIds, ...(plan.publishCustomAward ? [CUSTOM_AWARD_ID] : [])];
+  statements.push(env.DB.prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)').bind('results_publish', JSON.stringify({ snapshotId, publicationCycle, nominationIds: publishedNominationIds, explicitSelection: plan.explicitSelection }), timestamp, admin.twitchUserId));
   await env.DB.batch(statements);
-  return json({ ok: true, snapshotId, publishedNominationIds: ids });
+  return json({ ok: true, snapshotId, publishedNominationIds, customAwardPublished: plan.publishCustomAward });
 }
 
 async function snapshotResults(env: Env, snapshotId: string) {
@@ -637,13 +671,19 @@ async function ceremonyResults(request: Request, env: Env) {
 }
 
 async function publicResults(env: Env) {
+  const votingStatus = await setting(env, 'voting_status');
+  const resultsDirty = await setting(env, 'results_dirty') === '1';
+  if (!canExposePublicResults(votingStatus, resultsDirty)) return json({ published: false, nominations: [] });
   const snapshotId = await setting(env, 'current_snapshot_id');
-  if (!snapshotId || await setting(env, 'results_dirty') === '1') return json({ published: false, nominations: [] });
+  const publicationCycle = Number.parseInt(await setting(env, 'publication_cycle') || '', 10);
+  if (!snapshotId || !Number.isFinite(publicationCycle)) return json({ published: false, nominations: [] });
   const rows = await env.DB.prepare(`SELECT e.nomination_id AS nominationId, n.title AS nominationTitle, n.description,
     e.candidate_id AS candidateId, c.name AS candidateName, c.image_url AS imageUrl,
     e.vote_count AS voteCount, e.rank, e.is_winner AS isWinner
     FROM result_entries e JOIN nominations n ON n.id = e.nomination_id JOIN candidates c ON c.id = e.candidate_id
-    WHERE e.snapshot_id = ? AND e.published = 1 ORDER BY n.sort_order, e.rank, c.sort_order`).bind(snapshotId).all<Record<string, unknown>>();
+    JOIN result_publications p ON p.snapshot_id = e.snapshot_id AND p.nomination_id = e.nomination_id
+      AND p.publication_cycle = ?
+    WHERE e.snapshot_id = ? ORDER BY n.sort_order, e.rank, c.sort_order`).bind(publicationCycle, snapshotId).all<Record<string, unknown>>();
   const nominations: Array<Record<string, unknown>> = [...new Set(rows.results.map(row => String(row.nominationId)))].map(id => {
     const entries = rows.results.filter(row => row.nominationId === id);
     const total = entries.reduce((sum, row) => sum + Number(row.voteCount), 0);
@@ -652,8 +692,11 @@ async function publicResults(env: Env) {
       percent: total ? Math.round(Number(row.voteCount) / total * 10_000) / 100 : 0, rank: row.rank, isWinner: row.isWinner === 1,
     })) };
   });
-  const snapshot = await env.DB.prepare('SELECT status FROM results_snapshots WHERE id = ?').bind(snapshotId).first<{ status: string }>();
-  if (snapshot?.status === 'published') {
+  const customAwardPublished = await setting(env, 'custom_award_published') === '1'
+    && Boolean(await env.DB.prepare(`SELECT 1 FROM result_publications
+      WHERE snapshot_id = ? AND nomination_id = ? AND publication_cycle = ?`)
+      .bind(snapshotId, CUSTOM_AWARD_ID, publicationCycle).first());
+  if (customAwardPublished) {
     const custom = await env.DB.prepare(`SELECT s.twitch_user_id AS candidateId, s.award_title AS awardTitle,
       s.recipient AS candidateName, u.login AS authorLogin FROM custom_award_selection s
       JOIN custom_award_proposals p ON p.twitch_user_id = s.twitch_user_id AND p.status = 'valid'

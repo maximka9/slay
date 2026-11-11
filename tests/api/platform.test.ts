@@ -8,6 +8,7 @@ const root = resolve(import.meta.dirname, '../..');
 const migration = readFileSync(resolve(root, 'migrations/0001_voting_platform.sql'), 'utf8');
 const updateMigration = readFileSync(resolve(root, 'migrations/0002_update_dota_clips_and_fails.sql'), 'utf8');
 const simplifyMigration = readFileSync(resolve(root, 'migrations/0003_simplify_voting_and_custom_award.sql'), 'utf8');
+const publicationMigration = readFileSync(resolve(root, 'migrations/0004_result_publication_cycles.sql'), 'utf8');
 const apiSource = readFileSync(resolve(root, 'functions/api/[[path]].ts'), 'utf8');
 
 describe('voting platform invariants', () => {
@@ -32,9 +33,12 @@ describe('voting platform invariants', () => {
     expect(awards.categories.every(category => category.winnerId === null && (!('winner' in category) || category.winner === null))).toBe(true);
   });
 
-  it('serves public results only after publication', () => {
-    expect(apiSource).toContain('e.published = 1');
-    expect(apiSource).toContain("snapshot?.status === 'published'");
+  it('serves public results only from the current publication cycle', () => {
+    expect(publicationMigration).toContain('CREATE TABLE result_publications');
+    expect(publicationMigration).toContain("('custom_award_published', '0'");
+    expect(apiSource).toContain('result_publications');
+    expect(apiSource).toContain("setting(env, 'publication_cycle')");
+    expect(apiSource).toContain("setting(env, 'custom_award_published')");
   });
 
   it('archives prior clip, rage, and meme rows without reinterpreting their votes', () => {
