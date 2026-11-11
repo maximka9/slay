@@ -17,18 +17,24 @@ const number = (n: number) => String(n).padStart(2, '0');
 function safeRead(key: string) { try { return sessionStorage.getItem(key); } catch { return null; } }
 
 type CeremonyWinner = { nominationId: string; candidateId: string; name: string; imageUrl: string };
+type CeremonyProblem = { nominationId: string | null; nominationTitle: string | null; code: string; message: string };
+type NoWinner = { nominationId: string; title: string; reason: string };
 
 export function Present() {
   const auth = useAuth();
   const [config, setConfig] = useState<AwardsConfig | null>(null);
   const [loadError, setLoadError] = useState('');
+  const [readinessProblems, setReadinessProblems] = useState<CeremonyProblem[]>([]);
+  const rehearsal = new URLSearchParams(window.location.search).get('rehearsal') === '1';
   useEffect(() => {
     if (auth.loading) return;
     if (!auth.authenticated || !auth.isAdmin) {
       if (import.meta.env.DEV) setConfig(awards);
       return;
     }
-    api<{ ready: boolean; winners: CeremonyWinner[] }>('/api/admin/ceremony').then(result => {
+    if (rehearsal) { setConfig(structuredClone(awards)); return; }
+    api<{ ready: boolean; winners: CeremonyWinner[]; noWinners: NoWinner[]; problems: CeremonyProblem[] }>('/api/admin/ceremony').then(result => {
+      if (!result.ready) { setReadinessProblems(result.problems); return; }
       const next = structuredClone(awards);
       for (const winner of result.winners) {
         const category = next.categories.find(item => item.id === winner.nominationId);
@@ -37,17 +43,22 @@ export function Present() {
         if (nominee) category.winnerId = nominee.id;
         else category.winner = { id: winner.candidateId, name: winner.name, media: winner.imageUrl ? { src: winner.imageUrl, alt: winner.name } : undefined };
       }
+      for (const item of result.noWinners) {
+        const category = next.categories.find(entry => entry.id === item.nominationId);
+        if (category) category.winner = { id: `no-winner-${item.nominationId}`, name: 'Без победителя', description: item.reason };
+      }
       setConfig(next);
     }).catch(error => setLoadError(error instanceof Error ? error.message : 'Не удалось загрузить результаты церемонии.'));
-  }, [auth.authenticated, auth.isAdmin, auth.loading]);
-  if (auth.loading || (auth.authenticated && auth.isAdmin && !config && !loadError)) return <main className="present-access"><Trophy small /><h1>Подготавливаем церемонию</h1></main>;
+  }, [auth.authenticated, auth.isAdmin, auth.loading, rehearsal]);
+  if (auth.loading || (auth.authenticated && auth.isAdmin && !config && !loadError && !readinessProblems.length)) return <main className="present-access"><Trophy small /><h1>Подготавливаем церемонию</h1></main>;
   if (!auth.authenticated && !import.meta.env.DEV) return <main className="present-access"><Trophy small /><h1>Режим церемонии защищён</h1><p>Войдите через Twitch-аккаунт владельца канала.</p><a className="button primary" href={auth.loginUrl('/present')}>Войти через Twitch</a></main>;
   if (!auth.isAdmin && !import.meta.env.DEV) return <main className="present-access"><Trophy small /><h1>Доступ запрещён</h1><p>Управлять церемонией может только camca63.</p><Link className="button outline" to="/">На главную</Link></main>;
   if (loadError) return <main className="present-access"><Trophy small /><h1>Результаты недоступны</h1><p>{loadError}</p><button className="button primary" onClick={() => window.location.reload()}>Повторить</button></main>;
-  return <PresentStage config={config ?? awards} />;
+  if (readinessProblems.length) return <main className="present-access"><Trophy small /><h1>Церемония не готова</h1><ul className="ceremony-problems">{readinessProblems.map(problem => <li key={`${problem.code}-${problem.nominationId ?? 'global'}`}>{problem.message}</li>)}</ul><div className="access-actions"><Link className="button primary" to="/admin">Исправить в админ-панели</Link><Link className="button outline" to="/present?rehearsal=1">Открыть репетицию</Link></div></main>;
+  return <PresentStage config={config ?? awards} rehearsal={rehearsal} />;
 }
 
-function PresentStage({ config: awards }: { config: AwardsConfig }) {
+function PresentStage({ config: awards, rehearsal = false }: { config: AwardsConfig; rehearsal?: boolean }) {
   const scenes = createScenes(awards);
   const [params, setParams] = useSearchParams();
   const rawScene = Number(params.get('scene') ?? 1);
@@ -106,7 +117,7 @@ function PresentStage({ config: awards }: { config: AwardsConfig }) {
   const reveal = useCallback(() => {
     if (!category || scene.type !== 'winner' || revealed || phase === 'revealing') return;
     const winner = getWinner(category);
-    if (!winner) { setNotice('Победитель не задан. Укажите winnerId в конфиге перед эфиром.'); return; }
+    if (!winner) { setNotice(rehearsal ? 'Репетиция: реальный победитель не загружен.' : 'Победитель не определён в зафиксированных результатах. Вернитесь в админ-панель.'); return; }
     setNotice(''); setPhase('revealing');
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     revealTimer.current = setTimeout(() => {
@@ -146,7 +157,7 @@ function PresentStage({ config: awards }: { config: AwardsConfig }) {
           <div className="chat-window-bar"><i /><i /><i /><b>CAMCA63 / CHAT</b></div>
           <div className="chat-lines"><span><i>01</i><b>КОМЬЮНИТИ</b><em>тот самый голос в чате</em></span><span><i>02</i><b>2026</b><em>история, которую пишем вместе</em></span><span><i>03</i><b>ЧАТТЕР ГОДА</b><em>выбор зрителей</em></span></div>
         </div>
-        <div className="chatter-statement"><span className="eyebrow">НОМИНАЦИЯ БЕЗ ЗАРАНЕЕ ЗАДАННОГО СПИСКА</span><h2>ВАШИ ИМЕНА.<br /><em>ВАШ ВЫБОР.</em></h2><p>Кандидатов предлагает комьюнити в публикации с голосованием.</p></div>
+        <div className="chatter-statement"><span className="eyebrow">ЧАТТЕР ГОДА / 2026</span><h2>ГЛАВНЫЙ ГОЛОС<br /><em>НАШЕГО ЧАТА</em></h2><p>Тот, кто сделал этот год частью истории комьюнити.</p></div>
       </div>
     </div>;
     const nominees = c.nominees;

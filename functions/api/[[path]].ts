@@ -3,8 +3,14 @@ import { apiError, body, cookie, cookies, integer, json, redirect } from '../_li
 import { OAUTH_COOKIE, SESSION_COOKIE, SESSION_SECONDS, getSession, now, randomToken, rateLimit, requireAdmin, requireCsrf, requireUser, secretHash } from '../_lib/security';
 import { authorizeUrl, exchangeCode, resolveTwitchLogin } from '../_lib/twitch';
 import { publicNominations, setSetting, setting } from '../_lib/data';
+import { votingAvailability } from '../_lib/availability';
 
 type JsonObject = Record<string, unknown>;
+
+async function oauthActorHash(request: Request, env: Env) {
+  const networkSignal = request.headers.get('CF-Connecting-IP') ?? request.headers.get('x-forwarded-for') ?? 'local';
+  return secretHash(`oauth:${networkSignal}`, env.SESSION_SECRET);
+}
 
 export const onRequest: PagesFunction<Env> = async context => {
   try { return await route(context as ApiContext); }
@@ -41,6 +47,7 @@ async function route(context: ApiContext): Promise<Response> {
     if (method === 'POST' && path === '/api/admin/voting/status') return updateVotingStatus(request, env);
     if (method === 'POST' && path === '/api/admin/results/finalize') return finalizeResults(request, env);
     if (method === 'POST' && path === '/api/admin/results/resolve-tie') return resolveTie(request, env);
+    if (method === 'POST' && path === '/api/admin/results/no-winner') return markNoWinner(request, env);
     if (method === 'POST' && path === '/api/admin/results/publish') return publishResults(request, env);
     const voteAction = path.match(/^\/api\/admin\/votes\/(\d+)\/(exclude|restore)$/);
     if (method === 'POST' && voteAction) return moderateVote(request, env, Number(voteAction[1]), voteAction[2] as 'exclude' | 'restore');
@@ -52,6 +59,7 @@ async function route(context: ApiContext): Promise<Response> {
 }
 
 async function login(request: Request, env: Env, url: URL) {
+  await rateLimit(env, await oauthActorHash(request, env), 'oauth_login', 10);
   const state = randomToken();
   const stateHash = await secretHash(state, env.SESSION_SECRET);
   const returnToValue = url.searchParams.get('returnTo') || '/vote';
@@ -66,6 +74,7 @@ async function login(request: Request, env: Env, url: URL) {
 }
 
 async function callback(request: Request, env: Env, url: URL) {
+  await rateLimit(env, await oauthActorHash(request, env), 'oauth_callback', 20);
   const state = url.searchParams.get('state') ?? '';
   const expected = cookies(request)[OAUTH_COOKIE] ?? '';
   if (!state || !expected || state !== expected) throw new ApiError(400, 'OAuth state не совпал.', 'oauth_state_failed');
@@ -125,20 +134,20 @@ async function myVotes(request: Request, env: Env) {
 async function castVote(request: Request, env: Env, nominationId: string) {
   const user = await requireUser(request, env);
   requireCsrf(request, user);
-  await rateLimit(env, user.sessionHash, 'vote', 20);
+  await rateLimit(env, await secretHash(`twitch:${user.twitchUserId}`, env.SESSION_SECRET), 'vote', 20);
   const payload = await body<{ candidateId?: string; twitchLogin?: string }>(request);
   const [globalStatus, globalStartsAt, globalEndsAt] = await Promise.all([
     setting(env, 'voting_status'), setting(env, 'voting_starts_at'), setting(env, 'voting_ends_at'),
   ]);
-  if (globalStatus !== 'open') throw new ApiError(409, 'Голосование сейчас закрыто.', 'voting_closed');
   const nomination = await env.DB.prepare('SELECT id, voting_status, enabled, starts_at, ends_at FROM nominations WHERE id = ?').bind(nominationId).first<Record<string, string | number | null>>();
-  if (!nomination || nomination.enabled !== 1) throw new ApiError(404, 'Номинация не найдена.', 'nomination_not_found');
-  if (nomination.voting_status !== 'open') throw new ApiError(409, 'Эта номинация закрыта.', 'nomination_closed');
+  if (!nomination) throw new ApiError(404, 'Номинация не найдена.', 'nomination_not_found');
   const timestamp = now();
-  if (globalStartsAt && globalStartsAt > timestamp) throw new ApiError(409, 'Голосование ещё не началось.', 'voting_not_started');
-  if (globalEndsAt && globalEndsAt <= timestamp) throw new ApiError(409, 'Голосование завершено.', 'voting_closed');
-  if (nomination.starts_at && String(nomination.starts_at) > timestamp) throw new ApiError(409, 'Голосование в номинации ещё не началось.', 'nomination_not_started');
-  if (nomination.ends_at && String(nomination.ends_at) <= timestamp) throw new ApiError(409, 'Голосование в номинации завершено.', 'nomination_closed');
+  const availability = votingAvailability({
+    now: timestamp, globalStatus, globalStartsAt, globalEndsAt,
+    nominationStatus: String(nomination.voting_status), nominationStartsAt: nomination.starts_at as string | null,
+    nominationEndsAt: nomination.ends_at as string | null, enabled: nomination.enabled === 1,
+  });
+  if (!availability.canVote) throw new ApiError(409, availability.unavailableReason ?? 'Голосование недоступно.', 'voting_unavailable');
   let candidateId = payload.candidateId?.trim() ?? '';
   if (!candidateId && nominationId === 'chatter' && payload.twitchLogin && await setting(env, 'chatter_free_input') === '1') {
     const twitch = await resolveTwitchLogin(payload.twitchLogin, env);
@@ -176,7 +185,7 @@ async function adminOverview(request: Request, env: Env) {
       SUM(CASE WHEN status = 'excluded' THEN 1 ELSE 0 END) AS excludedVotes FROM votes`).first(),
     env.DB.prepare(`SELECT n.id, n.title, n.voting_status AS votingStatus, COUNT(v.id) AS votes,
       SUM(CASE WHEN v.status = 'valid' THEN 1 ELSE 0 END) AS validVotes
-      FROM nominations n LEFT JOIN votes v ON v.nomination_id = n.id GROUP BY n.id ORDER BY n.sort_order`).all(),
+      FROM nominations n LEFT JOIN votes v ON v.nomination_id = n.id WHERE n.enabled = 1 GROUP BY n.id ORDER BY n.sort_order`).all(),
     env.DB.prepare('SELECT MAX(updated_at) AS lastVoteAt FROM votes').first(),
     env.DB.prepare('SELECT key, value FROM settings').all<{ key: string; value: string }>(),
     env.DB.prepare("SELECT COUNT(DISTINCT twitch_user_id) AS recentUsers FROM votes WHERE updated_at >= datetime('now', '-1 day')").first(),
@@ -196,16 +205,19 @@ async function adminVotes(request: Request, env: Env, url: URL) {
   if (nomination) { clauses.push('v.nomination_id = ?'); bindings.push(nomination); }
   if (url.searchParams.get('newAccounts') === '1') clauses.push("u.twitch_created_at >= datetime('now', '-90 day')");
   const sort = url.searchParams.get('sort') === 'account' ? 'u.twitch_created_at DESC' : url.searchParams.get('sort') === 'first' ? 'u.first_seen_at DESC' : 'v.updated_at DESC';
-  const limit = integer(url.searchParams.get('limit'), 200, 1, 500);
+  const limit = integer(url.searchParams.get('limit'), 100, 1, 200);
+  const page = integer(url.searchParams.get('page'), 1, 1, 100_000);
+  const from = `FROM votes v JOIN users u ON u.twitch_user_id = v.twitch_user_id
+    JOIN nominations n ON n.id = v.nomination_id JOIN candidates c ON c.id = v.candidate_id
+    ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}`;
+  const total = await env.DB.prepare(`SELECT COUNT(*) AS count ${from}`).bind(...bindings).first<{ count: number }>();
   const query = `SELECT v.id, v.nomination_id AS nominationId, n.title AS nominationTitle, v.candidate_id AS candidateId,
     c.name AS candidateName, v.twitch_user_id AS twitchUserId, u.login, u.display_name AS displayName,
     u.avatar_url AS avatarUrl, u.twitch_created_at AS twitchCreatedAt, u.first_seen_at AS firstSeenAt,
     v.created_at AS createdAt, v.updated_at AS updatedAt, v.status, v.exclusion_reason AS exclusionReason,
-    v.exclusion_comment AS exclusionComment FROM votes v
-    JOIN users u ON u.twitch_user_id = v.twitch_user_id JOIN nominations n ON n.id = v.nomination_id
-    JOIN candidates c ON c.id = v.candidate_id ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''} ORDER BY ${sort} LIMIT ?`;
-  bindings.push(limit);
-  return json({ votes: (await env.DB.prepare(query).bind(...bindings).all()).results });
+    v.exclusion_comment AS exclusionComment ${from} ORDER BY ${sort} LIMIT ? OFFSET ?`;
+  const result = await env.DB.prepare(query).bind(...bindings, limit, (page - 1) * limit).all();
+  return json({ votes: result.results, pagination: { page, limit, total: total?.count ?? 0, pages: Math.max(1, Math.ceil((total?.count ?? 0) / limit)) } });
 }
 
 async function adminCandidates(request: Request, env: Env) {
@@ -256,7 +268,7 @@ async function moderateUser(request: Request, env: Env, twitchUserId: string, ac
 
 async function updateVotingStatus(request: Request, env: Env) {
   const admin = await requireAdmin(request, env); requireCsrf(request, admin);
-  const payload = await body<{ status?: string; startsAt?: string | null; endsAt?: string | null; timezone?: string; chatterFreeInput?: boolean }>(request);
+  const payload = await body<{ status?: string; startsAt?: string | null; endsAt?: string | null; timezone?: string; chatterFreeInput?: boolean; categoryAction?: 'open_all' | 'close_all' }>(request);
   if (!['preparation', 'open', 'closed'].includes(payload.status ?? '')) throw new ApiError(400, 'Некорректный статус.', 'invalid_status');
   if (payload.startsAt && Number.isNaN(Date.parse(payload.startsAt))) throw new ApiError(400, 'Некорректная дата начала.', 'invalid_start_date');
   if (payload.endsAt && Number.isNaN(Date.parse(payload.endsAt))) throw new ApiError(400, 'Некорректная дата окончания.', 'invalid_end_date');
@@ -267,11 +279,12 @@ async function updateVotingStatus(request: Request, env: Env) {
   if (payload.endsAt !== undefined) statements.push(setSetting(env, 'voting_ends_at', payload.endsAt ?? '', timestamp));
   if (payload.timezone) statements.push(setSetting(env, 'display_timezone', payload.timezone, timestamp));
   if (payload.chatterFreeInput !== undefined) statements.push(setSetting(env, 'chatter_free_input', payload.chatterFreeInput ? '1' : '0', timestamp));
-  if (payload.status === 'open') statements.push(env.DB.prepare("UPDATE nominations SET voting_status = 'open' WHERE enabled = 1 AND voting_status = 'preparation'"));
-  if (payload.status === 'closed') statements.push(env.DB.prepare("UPDATE nominations SET voting_status = 'closed' WHERE enabled = 1"));
+  if (payload.categoryAction === 'open_all') statements.push(env.DB.prepare("UPDATE nominations SET voting_status = 'open' WHERE enabled = 1"));
+  if (payload.categoryAction === 'close_all') statements.push(env.DB.prepare("UPDATE nominations SET voting_status = 'closed' WHERE enabled = 1"));
   statements.push(env.DB.prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)').bind(`voting_${payload.status}`, JSON.stringify(payload), timestamp, admin.twitchUserId));
   await env.DB.batch(statements);
-  return json({ ok: true, status: payload.status });
+  const actualOpen = await env.DB.prepare("SELECT COUNT(*) AS count FROM nominations WHERE enabled = 1 AND voting_status = 'open'").first<{ count: number }>();
+  return json({ ok: true, status: payload.status, openNominations: actualOpen?.count ?? 0 });
 }
 
 async function updateNomination(request: Request, env: Env, id: string) {
@@ -340,7 +353,8 @@ async function finalizeResults(request: Request, env: Env) {
       INSERT INTO result_entries (snapshot_id, nomination_id, candidate_id, vote_count, rank, is_winner, is_tie, published)
       WITH counts AS (
         SELECT c.nomination_id, c.id AS candidate_id, COUNT(v.id) AS vote_count
-        FROM candidates c LEFT JOIN votes v ON v.candidate_id = c.id AND v.status = 'valid'
+        FROM candidates c JOIN nominations n ON n.id = c.nomination_id AND n.enabled = 1
+        LEFT JOIN votes v ON v.candidate_id = c.id AND v.status = 'valid'
         WHERE c.enabled = 1 GROUP BY c.nomination_id, c.id
       ), ranked AS (
         SELECT *, DENSE_RANK() OVER (PARTITION BY nomination_id ORDER BY vote_count DESC) AS position FROM counts
@@ -373,9 +387,90 @@ async function resolveTie(request: Request, env: Env) {
     env.DB.prepare(`INSERT INTO tie_resolutions (snapshot_id, nomination_id, candidate_id, reason, resolved_at, admin_twitch_user_id)
       VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(snapshot_id, nomination_id) DO UPDATE SET candidate_id = excluded.candidate_id, reason = excluded.reason, resolved_at = excluded.resolved_at, admin_twitch_user_id = excluded.admin_twitch_user_id`)
       .bind(snapshotId, payload.nominationId, payload.candidateId, payload.reason.trim(), timestamp, admin.twitchUserId),
+    env.DB.prepare('DELETE FROM ceremony_exceptions WHERE snapshot_id = ? AND nomination_id = ?').bind(snapshotId, payload.nominationId),
     env.DB.prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)').bind('tie_resolve', JSON.stringify(payload), timestamp, admin.twitchUserId),
   ]);
   return json({ ok: true });
+}
+
+async function markNoWinner(request: Request, env: Env) {
+  const admin = await requireAdmin(request, env); requireCsrf(request, admin);
+  const payload = await body<{ nominationId?: string; reason?: string }>(request);
+  if (!payload.nominationId || !payload.reason?.trim()) throw new ApiError(400, 'Укажите номинацию и причину.', 'no_winner_reason_required');
+  const snapshotId = await setting(env, 'current_snapshot_id');
+  if (!snapshotId || await setting(env, 'results_dirty') === '1') throw new ApiError(409, 'Сначала зафиксируйте актуальные результаты.', 'results_not_finalized');
+  const nomination = await env.DB.prepare('SELECT id FROM nominations WHERE id = ? AND enabled = 1').bind(payload.nominationId).first();
+  if (!nomination) throw new ApiError(404, 'Номинация не найдена.', 'nomination_not_found');
+  const timestamp = now();
+  await env.DB.batch([
+    env.DB.prepare('UPDATE result_entries SET is_winner = 0, is_tie = 0 WHERE snapshot_id = ? AND nomination_id = ?').bind(snapshotId, payload.nominationId),
+    env.DB.prepare(`INSERT INTO ceremony_exceptions (snapshot_id, nomination_id, status, reason, created_at, admin_twitch_user_id)
+      VALUES (?, ?, 'no_winner', ?, ?, ?) ON CONFLICT(snapshot_id, nomination_id) DO UPDATE SET
+      status = excluded.status, reason = excluded.reason, created_at = excluded.created_at, admin_twitch_user_id = excluded.admin_twitch_user_id`)
+      .bind(snapshotId, payload.nominationId, payload.reason.trim(), timestamp, admin.twitchUserId),
+    env.DB.prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)')
+      .bind('results_no_winner', JSON.stringify(payload), timestamp, admin.twitchUserId),
+  ]);
+  return json({ ok: true });
+}
+
+type CeremonyProblem = { nominationId: string | null; nominationTitle: string | null; code: string; message: string };
+
+async function ceremonyMediaAvailable(imageUrl: string, request: Request) {
+  try {
+    const target = new URL(imageUrl, request.url);
+    const origin = new URL(request.url);
+    const trustedRemote = target.protocol === 'https:' && target.hostname === 'static-cdn.jtvnw.net';
+    if (target.origin !== origin.origin && !trustedRemote) return false;
+    const response = await fetch(target, { method: 'HEAD', redirect: 'follow' });
+    return response.ok;
+  } catch { return false; }
+}
+
+async function ceremonyReadiness(env: Env, request: Request) {
+  const problems: CeremonyProblem[] = [];
+  const globalStatus = await setting(env, 'voting_status');
+  if (globalStatus !== 'closed') problems.push({ nominationId: null, nominationTitle: null, code: 'voting_not_closed', message: 'Голосование должно быть закрыто.' });
+  const snapshotId = await setting(env, 'current_snapshot_id');
+  if (!snapshotId) {
+    problems.push({ nominationId: null, nominationTitle: null, code: 'results_not_finalized', message: 'Итоговые результаты ещё не зафиксированы.' });
+    return { ready: false, snapshotId: null, problems, winners: [], noWinners: [] };
+  }
+  if (await setting(env, 'results_dirty') === '1') problems.push({ nominationId: null, nominationTitle: null, code: 'results_dirty', message: 'Результаты изменились и требуют повторной фиксации.' });
+  const result = await env.DB.prepare(`SELECT n.id AS nominationId, n.title AS nominationTitle,
+    SUM(CASE WHEN e.is_winner = 1 THEN 1 ELSE 0 END) AS winnerCount,
+    SUM(CASE WHEN e.is_tie = 1 THEN 1 ELSE 0 END) AS tieCount,
+    MAX(CASE WHEN e.is_winner = 1 THEN e.candidate_id END) AS winnerCandidateId,
+    MAX(CASE WHEN e.is_winner = 1 THEN c.image_url END) AS winnerImageUrl,
+    MAX(CASE WHEN e.is_winner = 1 THEN c.enabled END) AS winnerEnabled,
+    MAX(x.status) AS exceptionStatus
+    FROM nominations n
+    LEFT JOIN result_entries e ON e.nomination_id = n.id AND e.snapshot_id = ?
+    LEFT JOIN candidates c ON c.id = e.candidate_id
+    LEFT JOIN ceremony_exceptions x ON x.nomination_id = n.id AND x.snapshot_id = ?
+    WHERE n.enabled = 1 GROUP BY n.id ORDER BY n.sort_order`).bind(snapshotId, snapshotId).all<Record<string, unknown>>();
+  for (const row of result.results) {
+    const nominationId = String(row.nominationId), nominationTitle = String(row.nominationTitle);
+    if (Number(row.tieCount) > 0) {
+      problems.push({ nominationId, nominationTitle, code: 'unresolved_tie', message: `${nominationTitle}: ничья не разрешена.` });
+      continue;
+    }
+    if (row.exceptionStatus === 'no_winner') continue;
+    if (Number(row.winnerCount) !== 1) {
+      problems.push({ nominationId, nominationTitle, code: 'winner_missing', message: `${nominationTitle}: победитель не определён.` });
+      continue;
+    }
+    if (!row.winnerCandidateId || Number(row.winnerEnabled) !== 1) problems.push({ nominationId, nominationTitle, code: 'winner_invalid', message: `${nominationTitle}: победитель отсутствует в актуальном списке кандидатов.` });
+    else if (!String(row.winnerImageUrl ?? '').trim()) problems.push({ nominationId, nominationTitle, code: 'winner_image_missing', message: `${nominationTitle}: у победителя нет изображения.` });
+    else if (!await ceremonyMediaAvailable(String(row.winnerImageUrl), request)) problems.push({ nominationId, nominationTitle, code: 'winner_image_unavailable', message: `${nominationTitle}: изображение победителя недоступно.` });
+  }
+  const winners = problems.length ? [] : (await env.DB.prepare(`SELECT e.nomination_id AS nominationId, e.candidate_id AS candidateId,
+    c.name, c.image_url AS imageUrl FROM result_entries e JOIN candidates c ON c.id = e.candidate_id
+    WHERE e.snapshot_id = ? AND e.is_winner = 1 ORDER BY e.nomination_id`).bind(snapshotId).all()).results;
+  const noWinners = problems.length ? [] : (await env.DB.prepare(`SELECT x.nomination_id AS nominationId, n.title, x.reason
+    FROM ceremony_exceptions x JOIN nominations n ON n.id = x.nomination_id
+    WHERE x.snapshot_id = ? AND x.status = 'no_winner' ORDER BY n.sort_order`).bind(snapshotId).all()).results;
+  return { ready: problems.length === 0, snapshotId, problems, winners, noWinners };
 }
 
 async function publishResults(request: Request, env: Env) {
@@ -384,8 +479,8 @@ async function publishResults(request: Request, env: Env) {
   if (await setting(env, 'results_dirty') === '1') throw new ApiError(409, 'Голоса изменились. Повторно зафиксируйте результаты.', 'results_dirty');
   const snapshotId = await setting(env, 'current_snapshot_id');
   if (!snapshotId) throw new ApiError(409, 'Сначала зафиксируйте результаты.', 'results_not_finalized');
-  const ties = await env.DB.prepare('SELECT COUNT(*) AS count FROM result_entries WHERE snapshot_id = ? AND is_tie = 1').bind(snapshotId).first<{ count: number }>();
-  if ((ties?.count ?? 0) > 0) throw new ApiError(409, 'Сначала разрешите все ничьи.', 'unresolved_ties');
+  const readiness = await ceremonyReadiness(env, request);
+  if (!readiness.ready) throw new ApiError(409, readiness.problems.map(problem => problem.message).join(' '), 'ceremony_not_ready');
   const payload = await body<{ nominationIds?: string[] }>(request);
   const ids = [...new Set((payload.nominationIds ?? []).filter(Boolean))];
   const timestamp = now();
@@ -416,22 +511,17 @@ async function adminResults(request: Request, env: Env) {
     FROM nominations n JOIN candidates c ON c.nomination_id = n.id AND c.enabled = 1
     LEFT JOIN votes v ON v.candidate_id = c.id AND v.status = 'valid'
     WHERE n.enabled = 1 GROUP BY n.id, c.id ORDER BY n.sort_order, voteCount DESC, c.sort_order`).all();
-  return json({ snapshot, dirty: await setting(env, 'results_dirty') === '1', entries: snapshotId ? await snapshotResults(env, snapshotId) : [], liveEntries: live.results });
+  return json({ snapshot, dirty: await setting(env, 'results_dirty') === '1', entries: snapshotId ? await snapshotResults(env, snapshotId) : [], liveEntries: live.results, readiness: await ceremonyReadiness(env, request) });
 }
 
 async function ceremonyResults(request: Request, env: Env) {
   await requireAdmin(request, env);
-  const snapshotId = await setting(env, 'current_snapshot_id');
-  if (!snapshotId || await setting(env, 'results_dirty') === '1') return json({ ready: false, winners: [] });
-  const result = await env.DB.prepare(`SELECT e.nomination_id AS nominationId, e.candidate_id AS candidateId,
-    c.name, c.image_url AS imageUrl FROM result_entries e JOIN candidates c ON c.id = e.candidate_id
-    WHERE e.snapshot_id = ? AND e.is_winner = 1 ORDER BY e.nomination_id`).bind(snapshotId).all();
-  return json({ ready: true, snapshotId, winners: result.results });
+  return json(await ceremonyReadiness(env, request));
 }
 
 async function publicResults(env: Env) {
   const snapshotId = await setting(env, 'current_snapshot_id');
-  if (!snapshotId) return json({ published: false, nominations: [] });
+  if (!snapshotId || await setting(env, 'results_dirty') === '1') return json({ published: false, nominations: [] });
   const rows = await env.DB.prepare(`SELECT e.nomination_id AS nominationId, n.title AS nominationTitle, n.description,
     e.candidate_id AS candidateId, c.name AS candidateName, c.image_url AS imageUrl,
     e.vote_count AS voteCount, e.rank, e.is_winner AS isWinner

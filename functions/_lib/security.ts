@@ -66,10 +66,14 @@ export function requireCsrf(request: Request, user: SessionUser) {
 
 export async function rateLimit(env: Env, actorHash: string, action: string, maximum: number) {
   const windowStart = Math.floor(Date.now() / 60_000);
-  const result = await env.DB.prepare(`
-    INSERT INTO rate_limits (actor_hash, action, window_start, request_count) VALUES (?, ?, ?, 1)
-    ON CONFLICT(actor_hash, action, window_start) DO UPDATE SET request_count = request_count + 1
-    RETURNING request_count
-  `).bind(actorHash, action, windowStart).first<{ request_count: number }>();
-  if ((result?.request_count ?? maximum + 1) > maximum) throw new ApiError(429, 'Слишком много запросов. Попробуйте через минуту.', 'rate_limited');
+  const [, result] = await env.DB.batch([
+    env.DB.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(windowStart - 60),
+    env.DB.prepare(`
+      INSERT INTO rate_limits (actor_hash, action, window_start, request_count) VALUES (?, ?, ?, 1)
+      ON CONFLICT(actor_hash, action, window_start) DO UPDATE SET request_count = request_count + 1
+      RETURNING request_count
+    `).bind(actorHash, action, windowStart),
+  ]);
+  const count = (result.results?.[0] as { request_count?: number } | undefined)?.request_count;
+  if ((count ?? maximum + 1) > maximum) throw new ApiError(429, 'Слишком много запросов. Попробуйте через минуту.', 'rate_limited');
 }

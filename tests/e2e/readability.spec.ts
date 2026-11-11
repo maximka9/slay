@@ -76,7 +76,7 @@ test('размеры текста и сетки заполненных номи�
         expect(card.font).toBeGreaterThanOrEqual(14);
       }
     }
-    for (const [scene, count] of [[7, 5], [9, 6], [13, 7], [15, 2]] as const) {
+    for (const [scene, count] of [[7, 5], [9, 6], [11, 7], [13, 7], [15, 8]] as const) {
       await page.goto(`/present?scene=${scene}`);
       await expect(page.getByTestId('nominee-card')).toHaveCount(count);
       const overflow = await page.locator('.nominee-card').evaluateAll(cards => cards.filter(card => card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1).length);

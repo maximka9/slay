@@ -24,7 +24,8 @@ export type AwardsConfig = {
 };
 
 const slots = (prefix: string): Nominee[] => Array.from({ length: 4 }, (_, i) => ({ id: `${prefix}-${i + 1}`, name: '' }));
-const video = (src: string, label: string): VideoAsset => ({ src, label });
+const mediaBase = (import.meta.env?.VITE_MEDIA_BASE_URL ?? '').replace(/\/$/, '');
+const video = (src: string, label: string): VideoAsset => ({ src: mediaBase ? `${mediaBase}${src}` : src, label });
 
 // Единственный источник контента. Все победители намеренно не заданы.
 export const awards: AwardsConfig = {
@@ -112,7 +113,16 @@ export const awards: AwardsConfig = {
       ],
       winnerId: null,
     },
-    { id: 'clip', title: 'Клип года', icon: 'play', kind: 'clip', intro: 'Несколько секунд, которые хочется пересматривать', nominees: slots('clip'), winnerId: null },
+    {
+      id: 'dota-clip', title: 'DOTA 2 — Клип года', icon: 'play', kind: 'clip',
+      intro: 'Лучшие моменты Dota 2: невероятные мувы, неожиданные развязки и эпизоды, которые хочется пересматривать',
+      nominees: Array.from({ length: 7 }, (_, i) => ({
+        id: `dota-clip-${i + 1}`, name: `Dota 2 — клип №${i + 1}`,
+        media: { src: `/assets/generated-previews/dota-clip/dota-clip-${String(i + 1).padStart(2, '0')}.jpg`, alt: `Кадр из Dota 2 — клип №${i + 1}` },
+        videos: [video(`/assets/nominees/dota-clip/videos/dota-clip-${String(i + 1).padStart(2, '0')}.mp4`, `Dota 2 — клип №${i + 1}`)],
+      })),
+      winnerId: null,
+    },
     {
       id: 'community-drop', title: 'Завоз от комьюнити', icon: 'package', kind: 'frame',
       intro: 'Когда зрители становились главными героями эфира. Самые яркие моменты, подаренные комьюнити',
@@ -124,12 +134,12 @@ export const awards: AwardsConfig = {
       winnerId: null,
     },
     {
-      id: 'rage', title: 'Рейдж', icon: 'flame', kind: 'frame',
-      intro: 'Моменты, когда терпение закончилось, эмоции вышли из-под контроля, а зрители получили незабываемые реакции',
-      nominees: Array.from({ length: 2 }, (_, i) => ({
-        id: `rage-${i + 1}`, name: `Рейдж №${i + 1}`,
-        media: { src: `/assets/generated-previews/rage/rage-${i + 1}.jpg`, alt: `Кадр из ролика Рейдж №${i + 1}` },
-        videos: [video(`/assets/nominees/rage/videos/rage-${i + 1}.mp4`, `Рейдж №${i + 1}`)],
+      id: 'fail', title: 'Фейл года', icon: 'flame', kind: 'frame',
+      intro: 'Моменты, когда всё пошло не по плану. Самые нелепые ошибки, неожиданные провалы и ситуации, которые невозможно забыть',
+      nominees: Array.from({ length: 8 }, (_, i) => ({
+        id: `fail-${i + 1}`, name: `Фейл №${i + 1}`,
+        media: { src: `/assets/generated-previews/fail/fail-${String(i + 1).padStart(2, '0')}.jpg`, alt: `Кадр из ролика Фейл №${i + 1}` },
+        videos: [video(`/assets/nominees/fail/videos/fail-${String(i + 1).padStart(2, '0')}.mp4`, `Фейл №${i + 1}`)],
       })),
       winnerId: null,
     },

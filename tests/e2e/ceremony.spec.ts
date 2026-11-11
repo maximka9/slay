@@ -23,7 +23,7 @@ test('обзор, девять номинаций в новом порядке, 
   await page.goto('/'); await ready(page);
   await expect(page.locator('.category-tile')).toHaveCount(9);
   await expect(page.getByText('9 НОМИНАЦИЙ', { exact: true })).toBeVisible();
-  await expect(page.locator('.category-tile h3')).toHaveText(['Инди-игра года', 'Игра года', 'Ивент года', 'Лучший ИРЛ с друзьями', 'Клип года', 'Завоз от комьюнити', 'Рейдж', 'Мем года', 'Чаттер года']);
+  await expect(page.locator('.category-tile h3')).toHaveText(['Инди-игра года', 'Игра года', 'Ивент года', 'Лучший ИРЛ с друзьями', 'DOTA 2 — Клип года', 'Завоз от комьюнити', 'Фейл года', 'Мем года', 'Чаттер года']);
   await mkdir('artifacts/screenshots-v5', { recursive: true });
   await page.screenshot({ path: 'artifacts/screenshots-v5/01-overview.png', fullPage: true });
   await page.getByRole('link', { name: 'Итоги', exact: true }).click();
@@ -40,7 +40,7 @@ test('обзор, девять номинаций в новом порядке, 
   await expect(page.getByTestId('nominee-card')).toHaveCount(10);
   await expect(page.getByRole('heading', { name: 'Clair Obscur: Expedition 33' })).toBeVisible();
   await page.screenshot({ path: 'artifacts/screenshots-v5/04-games.png' });
-  for (const [scene, count, title] of [[7, 5, 'Ивент года'], [9, 6, 'Лучший ИРЛ с друзьями'], [13, 7, 'Завоз от комьюнити'], [15, 2, 'Рейдж']] as const) {
+  for (const [scene, count, title] of [[7, 5, 'Ивент года'], [9, 6, 'Лучший ИРЛ с друзьями'], [11, 7, 'DOTA 2 — Клип года'], [13, 7, 'Завоз от комьюнити'], [15, 8, 'Фейл года']] as const) {
     await page.goto(`/present?scene=${scene}`); await ready(page);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
     await expect(page.getByTestId('nominee-card')).toHaveCount(count);
@@ -104,7 +104,8 @@ test('полный видеокадр помещается для материа
     [7, 'Что? Где? Когда?'],
     [9, 'Монстры на каникулах в Москве'],
     [13, 'Завоз №1'],
-    [15, 'Рейдж №1'],
+    [11, 'Dota 2 — клип №1'],
+    [15, 'Фейл №1'],
   ] as const;
   for (const [scene, name] of samples) {
     await page.goto(`/present?scene=${scene}`); await ready(page);
@@ -163,7 +164,7 @@ test('ручное раскрытие, защита от пролистыван�
 test('пустой победитель, клавиатура, полноэкранный режим и настройки', async ({ page }) => {
   await page.goto('/present?scene=4'); await ready(page);
   await page.getByRole('button', { name: /Объявить победителя/ }).click();
-  await expect(page.getByRole('status')).toContainText('Победитель не задан');
+  await expect(page.getByRole('status')).toContainText('Победитель не определён');
   await expect(page.getByTestId('winner-result')).toHaveCount(0);
   await page.getByRole('button', { name: 'Пропустить сцену' }).click();
   await expect(page).toHaveURL(/scene=5/);

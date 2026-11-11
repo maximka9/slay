@@ -6,9 +6,10 @@ export type MeResponse = { authenticated: boolean; isAdmin: boolean; csrfToken?:
 export type VotingCandidate = { id: string; name: string; imageUrl: string; twitchLogin?: string | null; sortOrder: number };
 export type VotingNomination = {
   id: string; title: string; description: string; sortOrder: number; votingStatus: 'preparation' | 'open' | 'closed';
-  enabled: boolean; startsAt?: string | null; endsAt?: string | null; candidates: VotingCandidate[];
+  enabled: boolean; startsAt?: string | null; endsAt?: string | null; canVote: boolean; unavailableReason: string | null; candidates: VotingCandidate[];
 };
 export type VotingData = {
+  serverNow: string;
   voting: { status: 'preparation' | 'open' | 'closed'; startsAt: string | null; endsAt: string | null; timezone: string; chatterFreeInput: boolean };
   nominations: VotingNomination[];
 };

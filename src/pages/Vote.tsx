@@ -64,8 +64,8 @@ export function Vote() {
     <div className="vote-nominations">{data.nominations.map((nomination, nominationIndex) => {
       const localCategory = categories[nomination.id] ?? categoryFor(nomination);
       const selected = votes[nomination.id]?.candidateId;
-      const open = data.voting.status === 'open' && nomination.votingStatus === 'open';
-      return <section className="vote-nomination" id={`vote-${nomination.id}`} key={nomination.id}><header><div><span className="eyebrow">НОМИНАЦИЯ {String(nominationIndex + 1).padStart(2, '0')} / {String(data.nominations.length).padStart(2, '0')}</span><h2>{nomination.title}</h2><p>{nomination.description}</p></div><span className={`nomination-state ${open ? 'open' : ''}`}>{open ? 'Открыта' : nomination.votingStatus === 'closed' ? 'Закрыта' : 'Подготовка'}</span></header>
+      const open = nomination.canVote;
+      return <section className="vote-nomination" id={`vote-${nomination.id}`} key={nomination.id}><header><div><span className="eyebrow">НОМИНАЦИЯ {String(nominationIndex + 1).padStart(2, '0')} / {String(data.nominations.length).padStart(2, '0')}</span><h2>{nomination.title}</h2><p>{nomination.description}</p></div><span className={`nomination-state ${open ? 'open' : ''}`}>{open ? 'Открыта' : nomination.unavailableReason ?? 'Недоступна'}</span></header>
         {nomination.candidates.length ? <div className={`voting-grid ${nomination.candidates.length > 6 ? 'many' : ''}`}>{nomination.candidates.map((candidate, index) => {
           const nominee = nomineeFor(candidate); const isSelected = selected === candidate.id; const watchable = Boolean(nominee.media?.src || nominee.videos?.length);
           return <article className={`voting-card ${isSelected ? 'selected' : ''}`} key={candidate.id}>
