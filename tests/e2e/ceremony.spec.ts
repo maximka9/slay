@@ -27,7 +27,7 @@ test('обзор, девять номинаций в новом порядке, 
   await mkdir('artifacts/screenshots-v5', { recursive: true });
   await page.screenshot({ path: 'artifacts/screenshots-v5/01-overview.png', fullPage: true });
   await page.getByRole('link', { name: 'Итоги', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Архив церемонии пока недоступен' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Итоги CAMCA63 AWARDS 2026.*будут опубликованы после церемонии награждения/ })).toBeVisible();
   await expect(page.locator('.result-winner')).toHaveCount(0);
   await page.goto('/present'); await ready(page);
   await page.screenshot({ path: 'artifacts/screenshots-v5/00-ceremony-cover.png' });

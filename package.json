@@ -6,11 +6,17 @@
   "scripts": {
     "prepare:media": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Invoke-Expression (Get-Content -LiteralPath './scripts/prepare-media.ps1' -Raw -Encoding utf8)\"",
     "dev": "vite --host 127.0.0.1",
+    "dev:cloudflare": "npm run build && wrangler pages dev",
     "build": "tsc -b && vite build",
+    "typecheck:functions": "tsc -p functions/tsconfig.json",
+    "db:migrate:local": "wrangler d1 migrations apply camca63-awards-2026 --local",
+    "db:migrate:remote": "wrangler d1 migrations apply camca63-awards-2026 --remote",
+    "db:backup": "wrangler d1 export camca63-awards-2026 --remote --output backups/camca63-awards.sql",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:production": "playwright test --config playwright.production.config.ts"
+    "test:production": "playwright test --config playwright.production.config.ts",
+    "test:api": "vitest run tests/api"
   },
   "dependencies": {
     "@fontsource/exo-2": "^5.2.8",
@@ -22,6 +28,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
+    "@cloudflare/workers-types": "^5.20261110.1",
     "@playwright/test": "^1.58.0",
     "@types/node": "^22.10.0",
     "@types/pngjs": "^6.0.5",
@@ -31,6 +38,7 @@
     "pngjs": "^7.0.0",
     "typescript": "~5.7.3",
     "vite": "^6.3.0",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "wrangler": "^4.160.0"
   }
 }

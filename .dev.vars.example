@@ -1,0 +1,7 @@
+# Скопируйте файл в .dev.vars и заполните локальными значениями.
+TWITCH_CLIENT_ID=
+TWITCH_CLIENT_SECRET=
+TWITCH_REDIRECT_URI=http://127.0.0.1:8788/api/auth/callback
+SESSION_SECRET=
+ADMIN_TWITCH_USER_ID=
+ENVIRONMENT=development

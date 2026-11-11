@@ -6,6 +6,9 @@ playwright-report/
 *.log
 *.tsbuildinfo
 .DS_Store
+.dev.vars
+.wrangler/
+backups/
 
 # Исходные медиапапки остаются локально; подготовленные runtime-копии лежат в public/assets.
 alko/
@@ -14,3 +17,5 @@ zavoz/
 рейдж/
 games/*.mp4
 indi/*.mp4
+фейл/
+дота/

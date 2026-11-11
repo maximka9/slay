@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, Maximize, Minimize, Settings2, X, RotateCcw, Trophy as TrophyIcon, Grid2X2, EyeOff } from 'lucide-react';
-import { awards, type Category, type Nominee } from '../data/awards';
+import { awards, type AwardsConfig, type Category, type Nominee } from '../data/awards';
 import { createScenes, getWinner, readReveals } from '../data/scenes';
 import { Brand } from '../components/Brand';
 import { Trophy } from '../components/Trophy';
@@ -9,13 +9,46 @@ import { CategoryIcon } from '../components/Icons';
 import { NomineeCard } from '../components/NomineeCard';
 import { MediaView } from '../components/MediaView';
 import { VideoPlayerModal } from '../components/VideoPlayerModal';
+import { useAuth } from '../components/AuthProvider';
+import { api } from '../lib/api';
 
-const scenes = createScenes(awards);
 const REVEALS_KEY = 'camca63-reveals-2026';
 const number = (n: number) => String(n).padStart(2, '0');
 function safeRead(key: string) { try { return sessionStorage.getItem(key); } catch { return null; } }
 
+type CeremonyWinner = { nominationId: string; candidateId: string; name: string; imageUrl: string };
+
 export function Present() {
+  const auth = useAuth();
+  const [config, setConfig] = useState<AwardsConfig | null>(null);
+  const [loadError, setLoadError] = useState('');
+  useEffect(() => {
+    if (auth.loading) return;
+    if (!auth.authenticated || !auth.isAdmin) {
+      if (import.meta.env.DEV) setConfig(awards);
+      return;
+    }
+    api<{ ready: boolean; winners: CeremonyWinner[] }>('/api/admin/ceremony').then(result => {
+      const next = structuredClone(awards);
+      for (const winner of result.winners) {
+        const category = next.categories.find(item => item.id === winner.nominationId);
+        if (!category) continue;
+        const nominee = category.nominees.find(item => item.id === winner.candidateId);
+        if (nominee) category.winnerId = nominee.id;
+        else category.winner = { id: winner.candidateId, name: winner.name, media: winner.imageUrl ? { src: winner.imageUrl, alt: winner.name } : undefined };
+      }
+      setConfig(next);
+    }).catch(error => setLoadError(error instanceof Error ? error.message : 'Не удалось загрузить результаты церемонии.'));
+  }, [auth.authenticated, auth.isAdmin, auth.loading]);
+  if (auth.loading || (auth.authenticated && auth.isAdmin && !config && !loadError)) return <main className="present-access"><Trophy small /><h1>Подготавливаем церемонию</h1></main>;
+  if (!auth.authenticated && !import.meta.env.DEV) return <main className="present-access"><Trophy small /><h1>Режим церемонии защищён</h1><p>Войдите через Twitch-аккаунт владельца канала.</p><a className="button primary" href={auth.loginUrl('/present')}>Войти через Twitch</a></main>;
+  if (!auth.isAdmin && !import.meta.env.DEV) return <main className="present-access"><Trophy small /><h1>Доступ запрещён</h1><p>Управлять церемонией может только camca63.</p><Link className="button outline" to="/">На главную</Link></main>;
+  if (loadError) return <main className="present-access"><Trophy small /><h1>Результаты недоступны</h1><p>{loadError}</p><button className="button primary" onClick={() => window.location.reload()}>Повторить</button></main>;
+  return <PresentStage config={config ?? awards} />;
+}
+
+function PresentStage({ config: awards }: { config: AwardsConfig }) {
+  const scenes = createScenes(awards);
   const [params, setParams] = useSearchParams();
   const rawScene = Number(params.get('scene') ?? 1);
   const current = Number.isFinite(rawScene) ? Math.min(scenes.length - 1, Math.max(0, Math.trunc(rawScene) - 1)) : 0;

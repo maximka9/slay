@@ -14,7 +14,7 @@ export function Overview() {
         <h1 className="hero-title"><span>CAMCA63</span><span className="outlined">AWARDS<span className="title-star">✦</span></span><span className="year">2026<span className="year-line" /></span></h1>
         <div className="hero-tagline">ИТОГИ ГОДА <span> / </span> ВЫБОР КОМЬЮНИТИ</div>
         <p className="hero-description">Люди, игры и моменты, ради которых<br className="desktop-break" /> мы снова нажимали «Смотреть».</p>
-        <div className="hero-actions"><Link className="button primary" to="/present"><Play size={17} fill="currentColor" /> Начать церемонию <ArrowUpRight size={19} /></Link><a className="button text-button" href="#nominations">Все номинации <ArrowDown size={17} /></a></div>
+        <div className="hero-actions"><Link className="button primary" to="/vote"><Play size={17} fill="currentColor" /> Перейти к голосованию <ArrowUpRight size={19} /></Link><a className="button text-button" href="#nominations">Все номинации <ArrowDown size={17} /></a></div>
         <div className="hero-note"><span className="mini-line" /> ОДИН КАНАЛ. ОДНО КОМЬЮНИТИ. НАШ ГОД.</div>
       </div>
       <div className="hero-visual"><div className="visual-corner">ЕЖЕГОДНАЯ ПРЕМИЯ<span>EST. BY COMMUNITY</span></div><Trophy /><div className="trophy-caption"><span>ВЫБОР ТЕХ, КТО БЫЛ РЯДОМ</span><b>THE COMMUNITY AWARD</b></div></div>
