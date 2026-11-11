@@ -18,6 +18,7 @@ const schema = execute(`
   SELECT id, enabled FROM nominations WHERE id = 'meme';
   SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'custom_award%';
   SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'result_publications';
+  SELECT id, name, image_url AS imageUrl, sort_order AS sortOrder FROM candidates WHERE nomination_id = 'event' ORDER BY sort_order;
 `);
 
 assert.deepEqual(schema[0].results.map(row => row.id), [
@@ -29,6 +30,15 @@ assert.deepEqual(schema[2].results.map(row => row.name).sort(), [
   'custom_award_proposal_history', 'custom_award_proposals', 'custom_award_selection',
 ]);
 assert.equal(schema[3].results[0]?.name, 'result_publications');
+assert.deepEqual(schema[4].results.map(row => [row.id, row.name, row.sortOrder]), [
+  ['event-chgk', 'Что? Где? Когда? №1', 1],
+  ['event-chgk-2', 'Что? Где? Когда? №2', 2],
+  ['event-chudo', 'Чудо-полес', 3],
+  ['event-logika', 'Где логика?', 4],
+  ['event-turnir-1', 'Новогодний турнир', 5],
+  ['event-turnir-2', 'The International 141', 6],
+]);
+assert.equal(schema[4].results[1]?.imageUrl, '/assets/nominees/event/chgk-2.png');
 
 const publicationSettings = execute(`
   SELECT key, value FROM settings WHERE key IN ('publication_cycle', 'custom_award_published') ORDER BY key;
@@ -152,4 +162,4 @@ execute(`
   DELETE FROM users WHERE twitch_user_id = '${testUser}';
 `);
 
-console.log('D1 integration: schema, status transitions, vote preservation, publication cycles and independent custom award disclosure verified.');
+console.log('D1 integration: six event candidates, status transitions, vote preservation, publication cycles and independent custom award disclosure verified.');

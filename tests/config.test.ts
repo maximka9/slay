@@ -25,8 +25,16 @@ describe('Сценарий и конфигурация', () => {
     expect(awards.categories[6].nominees).toHaveLength(8);
     expect(awards.categories.some(category => category.id === 'meme')).toBe(false);
     expect(awards.categories.flatMap(c => c.nominees.flatMap(n => n.videos ?? []))).toHaveLength(60);
-    expect(awards.categories.flatMap(c => c.nominees.flatMap(n => n.media ? [n.media] : []))).toHaveLength(51);
+    expect(awards.categories.flatMap(c => c.nominees.flatMap(n => n.media ? [n.media] : []))).toHaveLength(52);
     expect(new Set(awards.categories.flatMap(c => c.nominees.flatMap(n => n.videos?.map(item => item.src) ?? []))).size).toBe(60);
+    expect(awards.categories.find(category => category.id === 'event')?.nominees.map(item => [item.id, item.name, item.videos?.length ?? 0])).toEqual([
+      ['event-chgk', 'Что? Где? Когда? №1', 1],
+      ['event-chgk-2', 'Что? Где? Когда? №2', 0],
+      ['event-chudo', 'Чудо-полес', 0],
+      ['event-logika', 'Где логика?', 2],
+      ['event-turnir-1', 'Новогодний турнир', 2],
+      ['event-turnir-2', 'The International 141', 3],
+    ]);
     expect(JSON.stringify(awards)).not.toMatch(/sadpchelka|moderator|vip|Алкострим года/i);
   });
   it('отклоняет дубли, несуществующего и незаполненного победителя', () => {

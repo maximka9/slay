@@ -93,7 +93,8 @@ export const awards: AwardsConfig = {
     {
       id: 'event', title: 'Ивент года', icon: 'zap', kind: 'frame', intro: 'Событие, которое объединило зрителей',
       nominees: [
-        { id: 'event-chgk', name: 'Что? Где? Когда?', media: { src: '/assets/nominees/event/chgk.png', alt: 'Превью ивента Что? Где? Когда?' }, videos: [video('/assets/nominees/event/videos/chgk-1.mp4', 'Что? Где? Когда?')] },
+        { id: 'event-chgk', name: 'Что? Где? Когда? №1', media: { src: '/assets/nominees/event/chgk.png', alt: 'Превью ивента Что? Где? Когда? №1' }, videos: [video('/assets/nominees/event/videos/chgk-1.mp4', 'Что? Где? Когда? №1')] },
+        { id: 'event-chgk-2', name: 'Что? Где? Когда? №2', media: { src: '/assets/nominees/event/chgk-2.png', alt: 'Превью ивента Что? Где? Когда? №2' } },
         { id: 'event-chudo', name: 'Чудо-полес', media: { src: '/assets/nominees/event/chudo.jpg', alt: 'Превью ивента Чудо-полес' } },
         { id: 'event-logika', name: 'Где логика?', media: { src: '/assets/nominees/event/logika.png', alt: 'Превью ивента Где логика?' }, videos: [video('/assets/nominees/event/videos/logika-1.mp4', 'Где логика? — видео 1'), video('/assets/nominees/event/videos/logika-2.mp4', 'Где логика? — видео 2')] },
         { id: 'event-turnir-1', name: 'Новогодний турнир', media: { src: '/assets/nominees/event/turnir1.png', alt: 'Превью Новогоднего турнира' }, videos: [video('/assets/nominees/event/videos/turnir1-1.mp4', 'Новогодний турнир — видео 1'), video('/assets/nominees/event/videos/turnir1-2.mp4', 'Новогодний турнир — видео 2')] },

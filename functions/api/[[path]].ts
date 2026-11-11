@@ -287,9 +287,16 @@ async function adminCandidates(request: Request, env: Env) {
 
 async function adminActions(request: Request, env: Env, url: URL) {
   await requireAdmin(request, env);
-  const limit = integer(url.searchParams.get('limit'), 100, 1, 500);
-  const result = await env.DB.prepare('SELECT * FROM moderation_actions ORDER BY created_at DESC LIMIT ?').bind(limit).all();
-  return json({ actions: result.results });
+  const limit = integer(url.searchParams.get('limit'), 25, 1, 50);
+  const page = integer(url.searchParams.get('page'), 1, 1, 100_000);
+  const total = await env.DB.prepare('SELECT COUNT(*) AS count FROM moderation_actions').first<{ count: number }>();
+  const result = await env.DB.prepare(`SELECT a.*, admin.login AS adminLogin, admin.display_name AS adminDisplayName
+    FROM moderation_actions a LEFT JOIN users admin ON admin.twitch_user_id = a.admin_twitch_user_id
+    ORDER BY a.created_at DESC, a.id DESC LIMIT ? OFFSET ?`).bind(limit, (page - 1) * limit).all();
+  return json({
+    actions: result.results,
+    pagination: { page, limit, total: total?.count ?? 0, pages: Math.max(1, Math.ceil((total?.count ?? 0) / limit)) },
+  });
 }
 
 async function adminCustomAwards(request: Request, env: Env, url: URL) {
@@ -656,13 +663,16 @@ async function adminResults(request: Request, env: Env) {
   await requireAdmin(request, env);
   const snapshotId = await setting(env, 'current_snapshot_id');
   const snapshot = snapshotId ? await env.DB.prepare('SELECT * FROM results_snapshots WHERE id = ?').bind(snapshotId).first() : null;
+  const customAward = await env.DB.prepare(`SELECT s.award_title AS awardTitle, s.recipient, u.login AS authorLogin
+    FROM custom_award_selection s JOIN custom_award_proposals p ON p.twitch_user_id = s.twitch_user_id AND p.status = 'valid'
+    JOIN users u ON u.twitch_user_id = s.twitch_user_id WHERE s.id = 1`).first();
   const live = await env.DB.prepare(`SELECT n.id AS nominationId, n.title AS nominationTitle, c.id AS candidateId,
     c.name AS candidateName, c.image_url AS imageUrl, COUNT(v.id) AS voteCount,
     COUNT(v.id) * 100.0 / NULLIF(SUM(COUNT(v.id)) OVER (PARTITION BY n.id), 0) AS percent
     FROM nominations n JOIN candidates c ON c.nomination_id = n.id AND c.enabled = 1
     LEFT JOIN votes v ON v.candidate_id = c.id AND v.status = 'valid'
     WHERE n.enabled = 1 GROUP BY n.id, c.id ORDER BY n.sort_order, voteCount DESC, c.sort_order`).all();
-  return json({ snapshot, dirty: await setting(env, 'results_dirty') === '1', entries: snapshotId ? await snapshotResults(env, snapshotId) : [], liveEntries: live.results, readiness: await ceremonyReadiness(env, request) });
+  return json({ snapshot, dirty: await setting(env, 'results_dirty') === '1', entries: snapshotId ? await snapshotResults(env, snapshotId) : [], liveEntries: live.results, customAward, readiness: await ceremonyReadiness(env, request) });
 }
 
 async function ceremonyResults(request: Request, env: Env) {

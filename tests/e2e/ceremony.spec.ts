@@ -40,12 +40,17 @@ test('обзор, девять номинаций в новом порядке, 
   await expect(page.getByTestId('nominee-card')).toHaveCount(10);
   await expect(page.getByRole('heading', { name: 'Clair Obscur: Expedition 33' })).toBeVisible();
   await page.screenshot({ path: 'artifacts/screenshots-v5/04-games.png' });
-  for (const [scene, count, title] of [[7, 5, 'Ивент года'], [9, 6, 'Лучший ИРЛ с друзьями'], [11, 7, 'DOTA 2 — Клип года'], [13, 7, 'Завоз от комьюнити'], [15, 8, 'Фейл года']] as const) {
+  for (const [scene, count, title] of [[7, 6, 'Ивент года'], [9, 6, 'Лучший ИРЛ с друзьями'], [11, 7, 'DOTA 2 — Клип года'], [13, 7, 'Завоз от комьюнити'], [15, 8, 'Фейл года']] as const) {
     await page.goto(`/present?scene=${scene}`); await ready(page);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
     await expect(page.getByTestId('nominee-card')).toHaveCount(count);
     await page.screenshot({ path: `artifacts/screenshots-v5/scene-${scene}.png` });
   }
+  await page.goto('/present?scene=7'); await ready(page);
+  await expect(page.getByRole('heading', { name: 'Что? Где? Когда? №1' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Что? Где? Когда? №2' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Смотреть видео: Что? Где? Когда? №1' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Смотреть видео: Что? Где? Когда? №2' })).toHaveCount(0);
   await page.goto('/present?scene=17'); await ready(page);
   await expect(page.getByRole('heading', { name: 'ЧАТТЕР ГОДА' })).toBeVisible();
   await expect(page.getByTestId('nominee-card')).toHaveCount(0);
@@ -103,7 +108,7 @@ test('полный видеокадр помещается для материа
   const samples = [
     [3, "No, I'm Not a Human"],
     [5, 'Red Dead Redemption 2'],
-    [7, 'Что? Где? Когда?'],
+    [7, 'Что? Где? Когда? №1'],
     [9, 'Монстры на каникулах в Москве'],
     [13, 'Завоз №1'],
     [11, 'Dota 2 — клип №1'],

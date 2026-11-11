@@ -71,6 +71,7 @@ $copies = @(
 
   # Ивент года
   @('ivent/chgk 1.png', 'public/assets/nominees/event/chgk.png'),
+  @('ivent/chgk 2.png', 'public/assets/nominees/event/chgk-2.png'),
   @('ivent/chudo.jpg', 'public/assets/nominees/event/chudo.jpg'),
   @('ivent/logika.png', 'public/assets/nominees/event/logika.png'),
   @('ivent/turnir1.png', 'public/assets/nominees/event/turnir1.png'),

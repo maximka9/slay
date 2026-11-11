@@ -9,6 +9,7 @@ const migration = readFileSync(resolve(root, 'migrations/0001_voting_platform.sq
 const updateMigration = readFileSync(resolve(root, 'migrations/0002_update_dota_clips_and_fails.sql'), 'utf8');
 const simplifyMigration = readFileSync(resolve(root, 'migrations/0003_simplify_voting_and_custom_award.sql'), 'utf8');
 const publicationMigration = readFileSync(resolve(root, 'migrations/0004_result_publication_cycles.sql'), 'utf8');
+const secondChgkMigration = readFileSync(resolve(root, 'migrations/0005_add_second_chgk.sql'), 'utf8');
 const apiSource = readFileSync(resolve(root, 'functions/api/[[path]].ts'), 'utf8');
 
 describe('voting platform invariants', () => {
@@ -57,6 +58,14 @@ describe('voting platform invariants', () => {
     expect(updateMigration).toContain('CREATE TABLE ceremony_exceptions');
   });
 
+  it('adds the second CHGK without changing the first candidate ID or its votes', () => {
+    expect(secondChgkMigration).toContain("WHERE id = 'event-chgk'");
+    expect(secondChgkMigration).toContain("'event-chgk-2'");
+    expect(secondChgkMigration).not.toMatch(/UPDATE\s+votes/i);
+    expect(secondChgkMigration).not.toMatch(/DELETE\s+FROM\s+votes/i);
+    expect(secondChgkMigration).toContain("('results_dirty', '1'");
+  });
+
   it('uses only global status, enabled state, and readiness for availability', () => {
     const base = { globalStatus: 'open', enabled: true, ready: true };
     expect(votingAvailability(base)).toEqual({ canVote: true, unavailableReason: null });
@@ -72,5 +81,7 @@ describe('voting platform invariants', () => {
     expect(apiSource).toContain("path === '/api/custom-award'");
     expect(apiSource).toContain("path === '/api/admin/custom-awards/select'");
     expect(apiSource).toContain('async function ceremonyReadiness');
+    expect(apiSource).toContain("COUNT(*) AS count FROM moderation_actions");
+    expect(apiSource).toContain("LIMIT ? OFFSET ?");
   });
 });
