@@ -31,6 +31,7 @@ test('production: 51 превью, 60 видео, маршруты и локал
     expect(await page.locator('img').evaluateAll(imgs => imgs.every(img => (img as HTMLImageElement).naturalWidth > 0))).toBe(true);
   }
   expect(errors).toEqual([]);
-  expect(requests.every(url => url.startsWith('http://127.0.0.1:4173/'))).toBe(true);
+  const expectedOrigin = new URL(test.info().project.use.baseURL as string).origin;
+  expect(requests.every(url => url.startsWith(`${expectedOrigin}/`))).toBe(true);
   expect(requests.some(url => url.endsWith('.woff2'))).toBe(true);
 });
