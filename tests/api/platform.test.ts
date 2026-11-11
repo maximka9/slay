@@ -11,6 +11,7 @@ const simplifyMigration = readFileSync(resolve(root, 'migrations/0003_simplify_v
 const publicationMigration = readFileSync(resolve(root, 'migrations/0004_result_publication_cycles.sql'), 'utf8');
 const secondChgkMigration = readFileSync(resolve(root, 'migrations/0005_add_second_chgk.sql'), 'utf8');
 const contentRefreshMigration = readFileSync(resolve(root, 'migrations/0006_reorder_and_rename_awards.sql'), 'utf8');
+const failDescriptionMigration = readFileSync(resolve(root, 'migrations/0007_fix_fail_description.sql'), 'utf8');
 const apiSource = readFileSync(resolve(root, 'functions/api/[[path]].ts'), 'utf8');
 
 describe('voting platform invariants', () => {
@@ -74,6 +75,13 @@ describe('voting platform invariants', () => {
     expect(contentRefreshMigration).not.toMatch(/(?:UPDATE|DELETE\s+FROM)\s+votes/i);
     expect(contentRefreshMigration).not.toMatch(/(?:UPDATE|DELETE\s+FROM)\s+(?:results_snapshots|result_entries)/i);
     expect(contentRefreshMigration).toContain("('content_schema_version', '6'");
+  });
+
+  it('fixes only the fail description without invalidating results', () => {
+    expect(failDescriptionMigration).toContain("WHERE id = 'fail'");
+    expect(failDescriptionMigration).toContain('носки не так надел.');
+    expect(failDescriptionMigration).not.toContain('results_dirty');
+    expect(failDescriptionMigration).not.toMatch(/(?:UPDATE|DELETE\s+FROM)\s+(?:votes|results_snapshots|result_entries)/i);
   });
 
   it('uses only global status, enabled state, and readiness for availability', () => {

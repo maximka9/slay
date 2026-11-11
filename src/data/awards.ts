@@ -142,7 +142,7 @@ export const awards: AwardsConfig = {
     },
     {
       id: 'fail', title: 'Фейл года', icon: 'flame', kind: 'frame',
-      intro: 'Классика - тп на т3, не попал по кнопке, носки не та надел.',
+      intro: 'Классика - тп на т3, не попал по кнопке, носки не так надел.',
       nominees: Array.from({ length: 8 }, (_, i) => ({
         id: `fail-${i + 1}`, name: failClipNames[i],
         media: { src: `/assets/generated-previews/fail/fail-${String(i + 1).padStart(2, '0')}.jpg`, alt: `Кадр из клипа «${failClipNames[i]}»` },

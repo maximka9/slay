@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, Maximize, Pause, Play, RefreshCcw, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import type { Category, Nominee } from '../data/awards';
 
@@ -15,6 +16,7 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState('');
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
   const [closing, setClosing] = useState(false);
   const [videoDimensions, setVideoDimensions] = useState<VideoDimensions | null>(null);
   const [frameSize, setFrameSize] = useState<VideoDimensions | null>(null);
@@ -22,7 +24,7 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<number | null>(null);
-  const returnFocus = useRef<HTMLElement | null>(null);
+  const returnFocus = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const videos = nominee.videos ?? [];
   const currentVideo = videos[videoIndex];
   const isImage = videos.length === 0;
@@ -30,6 +32,8 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
   const requestClose = useCallback(() => {
     if (closing) return;
     videoRef.current?.pause();
+    setTransition(null);
+    setPlaying(false);
     setClosing(true);
     closeTimer.current = window.setTimeout(onClose, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180);
   }, [closing, onClose]);
@@ -51,6 +55,7 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
     setCompleted(false);
     setError('');
     setAutoplayBlocked(false);
+    setVideoReady(false);
     setVideoDimensions(null);
     setFrameSize(null);
   }, []);
@@ -65,6 +70,7 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
     setTransition(null);
     setError('');
     setAutoplayBlocked(false);
+    setVideoReady(false);
     if (videoIndex !== 0) {
       setVideoIndex(0);
       setVideoDimensions(null);
@@ -98,13 +104,33 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
     if (player?.requestFullscreen) void player.requestFullscreen();
   }, []);
 
+  const retryCurrent = useCallback(() => {
+    const player = videoRef.current;
+    if (!player) return;
+    setError('');
+    setVideoReady(false);
+    setAutoplayBlocked(false);
+    player.load();
+    void player.play().catch(() => setAutoplayBlocked(true));
+  }, []);
+
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const scroll = { x: window.scrollX, y: window.scrollY };
+    const previous = {
+      bodyOverflow: document.body.style.overflow,
+      bodyPaddingRight: document.body.style.paddingRight,
+      rootOverflow: document.documentElement.style.overflow,
+    };
+    const scrollbar = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
     document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    if (scrollbar) document.body.style.paddingRight = `${scrollbar}px`;
     closeRef.current?.focus();
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.body.style.overflow = previous.bodyOverflow;
+      document.body.style.paddingRight = previous.bodyPaddingRight;
+      document.documentElement.style.overflow = previous.rootOverflow;
+      window.scrollTo(scroll.x, scroll.y);
       if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
       window.requestAnimationFrame(() => returnFocus.current?.focus());
     };
@@ -115,12 +141,13 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
   }, []);
 
   useEffect(() => {
-    if (!currentVideo || transition || completed) return;
+    if (closing || !currentVideo || transition || completed) return;
     const player = videoRef.current;
     if (!player) return;
+    setVideoReady(false);
     player.load();
     void player.play().then(() => setAutoplayBlocked(false)).catch(() => setAutoplayBlocked(true));
-  }, [completed, currentVideo, transition, videoIndex]);
+  }, [closing, completed, currentVideo, transition, videoIndex]);
 
   useEffect(() => {
     if (!transition || transition.paused) return;
@@ -190,7 +217,7 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
       ? { icon: <Play />, label: 'Смотреть снова' }
       : { icon: playing ? <Pause /> : <Play />, label: playing ? 'Пауза' : 'Воспроизвести' };
 
-  return <div className={`media-modal ${closing ? 'is-closing' : ''}`} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) requestClose(); }}>
+  return createPortal(<div className={`media-modal ${closing ? 'is-closing' : ''}`} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) requestClose(); }}>
     <div className={`media-dialog ${isImage ? 'image-dialog' : 'video-dialog'}`} role="dialog" aria-modal="true" aria-labelledby="media-dialog-title">
       <header className="media-dialog-header">
         <div><span>{category.title}</span><h2 id="media-dialog-title">{nominee.name}</h2>{!isImage && <p>Видео {videoIndex + 1} из {videos.length} · {currentVideo?.label}</p>}</div>
@@ -203,10 +230,12 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
               : <div className="video-frame" style={frameSize ? { width: frameSize.width, height: frameSize.height } : undefined}>
                 <video key={currentVideo?.src} ref={videoRef} src={currentVideo?.src} poster={nominee.media?.src} controls preload="metadata" playsInline muted={muted}
                   onLoadedMetadata={event => setVideoDimensions({ width: event.currentTarget.videoWidth, height: event.currentTarget.videoHeight })}
+                  onLoadedData={() => setVideoReady(true)}
                   onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={ended}
-                  onError={() => setError('Не удалось загрузить этот ролик. Проверьте файл и попробуйте следующий.')} />
+                  onError={() => { setVideoReady(false); setError('Не удалось загрузить этот ролик. Попробуйте ещё раз или перейдите к следующему.'); }} />
               </div>}
-          {error && <div className="video-error" role="alert">{error}<button onClick={next}>Следующий ролик</button></div>}
+          {!transition && !completed && !videoReady && !error && <div className="video-loading" role="status">{nominee.media?.src && <img src={nominee.media.src} alt="" />}<span aria-hidden="true" /><b>ЗАГРУЖАЕМ ВИДЕО</b></div>}
+          {error && <div className="video-error" role="alert"><span>{error}</span><div><button onClick={retryCurrent}><RefreshCcw /> Повторить</button>{nextTarget() && <button onClick={next}>Следующий ролик</button>}</div></div>}
           {autoplayBlocked && !transition && !completed && <button className="autoplay-start" onClick={togglePlay}><Play /> Запустить видео</button>}
         </div>
         <div className="video-controls-row">
@@ -220,5 +249,5 @@ export function VideoPlayerModal({ category, nominee, onClose }: { category: Cat
         </div>
       </>}
     </div>
-  </div>;
+  </div>, document.body);
 }

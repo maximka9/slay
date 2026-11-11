@@ -18,6 +18,7 @@ describe('Сценарий и конфигурация', () => {
     expect(awards.categories[2].nominees.map(n => n.name)).toContain('Чудо-полес');
     expect(awards.categories[3]).toMatchObject({ title: 'DOTA 2 — Клип года', intro: 'Куда же без DOTA 2 - 70% стримов проводились в этой игре' });
     expect(awards.categories[3].nominees.map(n => n.name)).toEqual(['Вчера моя мне возразить решила...', 'Веселая ферма', 'Выбирай одну шмотку', 'Настучал', 'Бесконечная битва', 'Добрый стример', 'Записки психиатра']);
+    expect(awards.categories[4]).toMatchObject({ title: 'Фейл года', intro: 'Классика - тп на т3, не попал по кнопке, носки не так надел.' });
     expect(awards.categories[4].nominees.map(n => n.name)).toEqual(['Золотые купола', 'Победный вейв', 'В себя поверил?', 'АААААРБУУУУУУЗ', '1000 игр на лансере', 'Опа', 'Отвлекся', 'Прикинь я проиграл...']);
     expect(awards.categories[5].nominees).toHaveLength(7);
     expect(awards.categories[5].nominees.map(n => n.name)).toEqual(['Ангельский голос', 'Как я эту игру зае*алась играть', 'Интересный донат', 'Ему нравится', 'Найс тайминг', 'Самарские авиалинии', 'Без посадки авто нет']);
