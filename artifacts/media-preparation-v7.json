@@ -1,5 +1,5 @@
 ﻿{
-    "generatedAt":  "2026-11-11T00:52:38.2430812Z",
+    "generatedAt":  "2026-11-11T02:11:19.7950278Z",
     "cloudflarePagesSingleAssetLimitBytes":  26214400,
     "videos":  [
                    {
@@ -10,9 +10,9 @@
                        "audioCodec":  "aac",
                        "width":  1920,
                        "height":  1080,
-                       "durationSeconds":  30.983,
-                       "bytes":  31540936,
-                       "pagesAssetCompatible":  false
+                       "durationSeconds":  21.35,
+                       "bytes":  22863101,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "games/rdr 2.mp4",
@@ -46,9 +46,9 @@
                        "audioCodec":  "aac",
                        "width":  1920,
                        "height":  1080,
-                       "durationSeconds":  49.3,
-                       "bytes":  33806687,
-                       "pagesAssetCompatible":  false
+                       "durationSeconds":  32.167,
+                       "bytes":  22755837,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "games/re 2 1.mp4",
@@ -238,9 +238,9 @@
                        "audioCodec":  "aac",
                        "width":  1920,
                        "height":  1080,
-                       "durationSeconds":  50.007,
-                       "bytes":  38600671,
-                       "pagesAssetCompatible":  false
+                       "durationSeconds":  34.283,
+                       "bytes":  7359052,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "ivent/turnir1 1.mp4",
@@ -263,8 +263,8 @@
                        "width":  1920,
                        "height":  1080,
                        "durationSeconds":  30,
-                       "bytes":  35427519,
-                       "pagesAssetCompatible":  false
+                       "bytes":  22573058,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "ivent/turnir2 1.mp4",
@@ -275,8 +275,8 @@
                        "width":  1920,
                        "height":  1080,
                        "durationSeconds":  36.871,
-                       "bytes":  28683475,
-                       "pagesAssetCompatible":  false
+                       "bytes":  22423903,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "ivent/turnir2 2.mp4",
@@ -418,9 +418,9 @@
                        "audioCodec":  "aac",
                        "width":  1920,
                        "height":  1080,
-                       "durationSeconds":  35.034,
-                       "bytes":  27096247,
-                       "pagesAssetCompatible":  false
+                       "durationSeconds":  35.033,
+                       "bytes":  22584394,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "alko/ГОТОВИМ ПИЦЦУ 2.mp4",
@@ -430,9 +430,9 @@
                        "audioCodec":  "aac",
                        "width":  1920,
                        "height":  1080,
-                       "durationSeconds":  35.034,
-                       "bytes":  27096247,
-                       "pagesAssetCompatible":  false
+                       "durationSeconds":  18,
+                       "bytes":  9770022,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "alko/МОСКОВСКИЙАЛКОКУКИНГ 1.mp4",
@@ -527,8 +527,8 @@
                        "width":  1920,
                        "height":  1080,
                        "durationSeconds":  56.011,
-                       "bytes":  43304041,
-                       "pagesAssetCompatible":  false
+                       "bytes":  24165297,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "zavoz/завоз 7.mp4",
@@ -575,8 +575,8 @@
                        "width":  1920,
                        "height":  1080,
                        "durationSeconds":  38.496,
-                       "bytes":  30054929,
-                       "pagesAssetCompatible":  false
+                       "bytes":  16845947,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "дота/20261011_NimbleQuaintHerdTBTacoLeft-vg_Aj-WCo4SJuiHy_source.mp4",
@@ -587,8 +587,8 @@
                        "width":  1920,
                        "height":  1080,
                        "durationSeconds":  38.575,
-                       "bytes":  29469273,
-                       "pagesAssetCompatible":  false
+                       "bytes":  16428037,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "дота/20261013_ZealousSavoryPhoneOSfrog-GFpOBkPOMDhRLmYU_source.mp4",
@@ -608,11 +608,11 @@
                        "container":  "mov,mp4,m4a,3gp,3g2,mj2",
                        "videoCodec":  "h264",
                        "audioCodec":  "aac",
-                       "width":  1920,
-                       "height":  1080,
-                       "durationSeconds":  44.116,
-                       "bytes":  34345640,
-                       "pagesAssetCompatible":  false
+                       "width":  1280,
+                       "height":  720,
+                       "durationSeconds":  44.1,
+                       "bytes":  19720031,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "дота/рейдж 2.mp4",
@@ -620,11 +620,11 @@
                        "container":  "mov,mp4,m4a,3gp,3g2,mj2",
                        "videoCodec":  "h264",
                        "audioCodec":  "aac",
-                       "width":  1920,
-                       "height":  1080,
-                       "durationSeconds":  60.02,
-                       "bytes":  46298097,
-                       "pagesAssetCompatible":  false
+                       "width":  1280,
+                       "height":  720,
+                       "durationSeconds":  60.019,
+                       "bytes":  19539385,
+                       "pagesAssetCompatible":  true
                    },
                    {
                        "source":  "фейл/20251005_ProtectiveFaithfulSproutKeepo-Md_dlI-P1KDiCnv7_source.mp4",

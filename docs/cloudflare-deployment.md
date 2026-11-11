@@ -36,9 +36,11 @@ npx wrangler d1 execute camca63-awards-2026 --remote --command "SELECT * FROM mi
 
 Поля `old_clip_votes` и `old_rage_votes` показывают число сохранённых исторических голосов. В публичном списке остаются ровно 9 активных номинаций и 51 кандидат.
 
-## 3. Видео в R2
+## 3. Видео и опциональный R2
 
-[Cloudflare Pages принимает отдельный статический файл размером не более 25 MiB](https://developers.cloudflare.com/pages/platform/limits/). В текущем наборе 12 из 60 MP4 превышают этот предел, поэтому production-сборка должна получать видео с R2.
+[Cloudflare Pages принимает отдельный статический файл размером не более 25 MiB](https://developers.cloudflare.com/pages/platform/limits/). Все 60 подготовленных MP4 укладываются в этот предел, поэтому текущую сборку можно публиковать непосредственно через Pages. Отчёт `artifacts/media-preparation-v7.json` фиксирует кодеки, длительность, размер и совместимость каждого файла.
+
+R2 остаётся опциональным вариантом для снижения нагрузки на Pages или будущих более крупных роликов. Для его использования создайте bucket и загрузите подготовленные файлы с сохранением путей `assets/...`:
 
 Создайте bucket и загрузите подготовленные файлы с сохранением путей `assets/...`:
 
@@ -47,13 +49,13 @@ npx wrangler r2 bucket create camca63-awards-media
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/upload-media-r2.ps1 -Bucket camca63-awards-media
 ```
 
-Подключите к bucket пользовательский домен, например `media.example.com`, и [разрешите методы `GET` и `HEAD` в CORS](https://developers.cloudflare.com/r2/buckets/cors/) для точного домена сайта. Для [кэширования R2 используйте пользовательский домен](https://developers.cloudflare.com/cache/interaction-cloudflare-products/r2/). Затем добавьте в build variables Pages:
+Подключите к bucket пользовательский домен, например `media.example.com`, и [разрешите методы `GET` и `HEAD` в CORS](https://developers.cloudflare.com/r2/buckets/cors/) для точного домена сайта. Для [кэширования R2 используйте пользовательский домен](https://developers.cloudflare.com/cache/interaction-cloudflare-products/r2/). Затем при необходимости добавьте в build variables Pages:
 
 ```text
 VITE_MEDIA_BASE_URL=https://media.example.com
 ```
 
-При заданной переменной ссылки на ролики получают этот префикс, а Vite исключает все MP4 из `dist`. Локальная сборка без переменной продолжает включать ролики для автономной проверки. Отчёт `artifacts/media-preparation-v7.json` фиксирует кодеки, длительность, размер и совместимость каждого файла с Pages.
+При заданной переменной ссылки на ролики получают этот префикс, а Vite исключает все MP4 из `dist`. Сборка без переменной включает ролики в Pages.
 
 ## 4. Cloudflare Pages из GitHub
 
@@ -61,7 +63,7 @@ VITE_MEDIA_BASE_URL=https://media.example.com
 2. В Cloudflare Dashboard откройте **Workers & Pages → Create → Pages → Connect to Git** и выберите репозиторий.
 3. Укажите production branch `main`, build command `npm run build`, output directory `dist`.
 4. В настройках Pages откройте **Settings → Bindings → D1 database bindings**. Добавьте binding с именем `DB` и выберите `camca63-awards-2026` для Preview и Production.
-5. В **Settings → Variables and Secrets** добавьте зашифрованные Production secrets и build variable R2:
+5. В **Settings → Variables and Secrets** добавьте зашифрованные Production secrets. Переменная R2 нужна только при использовании отдельного медиадомена:
 
 | Имя | Значение |
 |---|---|
@@ -71,7 +73,7 @@ VITE_MEDIA_BASE_URL=https://media.example.com
 | `SESSION_SECRET` | случайная строка не короче 32 байт |
 | `ADMIN_TWITCH_USER_ID` | постоянный числовой Twitch ID `camca63` |
 | `ENVIRONMENT` | `production` |
-| `VITE_MEDIA_BASE_URL` | публичный HTTPS-домен R2 без завершающего `/` |
+| `VITE_MEDIA_BASE_URL` | необязательно: публичный HTTPS-домен R2 без завершающего `/` |
 
 Сгенерировать подходящий session secret локально можно командой `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Его вывод не следует сохранять в истории репозитория.
 
