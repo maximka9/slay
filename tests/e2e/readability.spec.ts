@@ -52,6 +52,11 @@ test('контраст WCAG AA на всех сценах, обзоре, арх�
 
 test('размеры текста и сетки заполненных номинаций без обрезки', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  const remainingNomineeScenes = createScenes(awards).flatMap((scene, index) => {
+    if (scene.type !== 'nominees' || !scene.categoryId || index + 1 <= 5) return [];
+    const category = awards.categories.find(item => item.id === scene.categoryId);
+    return category?.nominees.length ? [{ scene: index + 1, count: category.nominees.length }] : [];
+  });
   for (const width of [1920, 1366, 1280]) {
     await page.setViewportSize({ width, height: width === 1920 ? 1080 : width === 1366 ? 768 : 720 });
     await page.goto('/');
@@ -76,7 +81,7 @@ test('размеры текста и сетки заполненных номи�
         expect(card.font).toBeGreaterThanOrEqual(14);
       }
     }
-    for (const [scene, count] of [[7, 6], [9, 6], [11, 7], [13, 7], [15, 8]] as const) {
+    for (const { scene, count } of remainingNomineeScenes) {
       await page.goto(`/present?scene=${scene}`);
       await expect(page.getByTestId('nominee-card')).toHaveCount(count);
       const overflow = await page.locator('.nominee-card').evaluateAll(cards => cards.filter(card => card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1).length);

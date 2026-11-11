@@ -654,6 +654,7 @@
   @keyframes custom-confirm { 0%, 100% { box-shadow: none; } 42% { border-color: var(--cyan); box-shadow: 0 0 32px #00d9d333; } }
 
   @media (prefers-reduced-motion: reduce) {
+    .page-transition::before { opacity: 0; }
     .page-transition, .page-transition::before, .site-shell .site-header .brand,
     .hero-copy > *, .hero-copy > .hero-title > span, .hero-visual, .hero-grid::before,
     .hero-visual .orbit, .sport-title::after, .section-heading h2::after,
