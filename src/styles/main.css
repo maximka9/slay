@@ -690,3 +690,26 @@
 .vote-nomination { transition: box-shadow .4s ease; }
 .vote-nomination.is-targeted { box-shadow: 0 0 0 2px var(--cyan), 0 0 32px #33e1ff40; }
 @media (prefers-reduced-motion: reduce) { .vote-nomination { transition: none; } }
+
+/* Модальные окна админки (вместо window.confirm / window.prompt) */
+.admin-dialog-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: #03040acc; backdrop-filter: blur(4px); }
+.admin-dialog { width: min(520px, 100%); max-height: calc(100vh - 40px); overflow: auto; display: grid; gap: 14px; padding: 24px; color: var(--text); background: #10131c; border: 1px solid #ffffff26; box-shadow: 0 24px 70px #000a; }
+.admin-dialog h2 { margin: 0; font-size: 20px; line-height: 1.25; }
+.admin-dialog p { margin: 0; color: var(--muted); line-height: 1.5; }
+.admin-dialog-field { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
+.admin-dialog-field input, .admin-dialog-field select, .admin-dialog-field textarea { width: 100%; min-height: 42px; padding: 9px 12px; color: var(--text); font: inherit; font-size: 15px; background: #0a0d16; border: 1px solid #ffffff2e; color-scheme: dark; }
+.admin-dialog-field textarea { resize: vertical; min-height: 80px; }
+.admin-dialog-check { display: flex; align-items: flex-start; gap: 10px; color: var(--text); font-size: 14px; line-height: 1.4; }
+.admin-dialog-check input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--cyan); }
+.admin-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.admin-dialog-actions button { min-height: 42px; padding: 9px 18px; color: var(--text); font: inherit; font-weight: 700; background: #181b26; border: 1px solid #ffffff2e; cursor: pointer; }
+.admin-dialog-actions button:hover { border-color: var(--cyan); }
+.admin-dialog-actions button.primary { color: #041314; background: var(--cyan); border-color: var(--cyan); }
+.admin-dialog-actions button.danger { color: #fff; background: #b8314f; border-color: #e25371; }
+@media (max-width: 520px) { .admin-dialog { padding: 18px; } .admin-dialog-actions button { flex: 1; } }
+
+/* Плашка частичной загрузки админки */
+.admin-load-failure { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 20px; padding: 12px 16px; color: #ffe4b8; background: #2a1a0d; border: 1px solid #ffb34788; }
+.admin-load-failure span { flex: 1; min-width: 220px; }
+.admin-load-failure button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; color: var(--text); background: #181b26; border: 1px solid #ffffff2e; cursor: pointer; }
+.snapshot-fresh { color: #7dffb0; }

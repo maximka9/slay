@@ -22,9 +22,10 @@ npx wrangler login
 npx wrangler d1 create camca63-awards-2026
 ```
 
-Скопируйте выданный `database_id` вместо `00000000-0000-0000-0000-000000000000` в `wrangler.jsonc`, затем примените миграции:
+База уже создана, её `database_id` (`1c3347d2-09d2-4b69-8528-5f9c6faadbaa`) записан в `wrangler.jsonc`. Для новой базы замените это значение на выданное командой. Затем примените миграции (сейчас их 10: последние — 0008 «Вашей номинации», 0009 свободный ввод ника в «Чаттере», 0010 поле `moderated_at` для модерации голосов). Перед этим всегда делайте бэкап:
 
 ```powershell
+npm run db:backup
 npm run db:migrate:remote
 ```
 
@@ -38,7 +39,7 @@ npx wrangler d1 execute camca63-awards-2026 --remote --command "SELECT * FROM mi
 
 ## 3. Видео и опциональный R2
 
-[Cloudflare Pages принимает отдельный статический файл размером не более 25 MiB](https://developers.cloudflare.com/pages/platform/limits/). Все 60 подготовленных MP4 укладываются в этот предел, поэтому текущую сборку можно публиковать непосредственно через Pages. Отчёт `artifacts/media-preparation-v7.json` фиксирует кодеки, длительность, размер и совместимость каждого файла.
+[Cloudflare Pages принимает отдельный статический файл размером не более 25 MiB](https://developers.cloudflare.com/pages/platform/limits/). Все 61 подготовленный MP4 (крупнейший — около 15 MB) укладываются в этот предел, поэтому текущую сборку можно публиковать непосредственно через Pages. Отчёт `artifacts/media-preparation-v7.json` фиксирует кодеки, длительность, размер и совместимость каждого файла.
 
 R2 остаётся опциональным вариантом для снижения нагрузки на Pages или будущих более крупных роликов. Для его использования создайте bucket и загрузите подготовленные файлы с сохранением путей `assets/...`:
 
@@ -56,6 +57,17 @@ VITE_MEDIA_BASE_URL=https://media.example.com
 ```
 
 При заданной переменной ссылки на ролики получают этот префикс, а Vite исключает все MP4 из `dist`. Сборка без переменной включает ролики в Pages.
+
+### Сброс тестовых данных
+
+Перед открытием голосования тестовые голоса удаляются вручную, только после бэкапа:
+
+```powershell
+npm run db:backup
+npx wrangler d1 execute camca63-awards-2026 --remote --file scripts/reset-test-data.sql
+```
+
+Описание того, что удаляется и что сохраняется, — в начале файла `scripts/reset-test-data.sql`.
 
 ## 4. Cloudflare Pages из GitHub
 

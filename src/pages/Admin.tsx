@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
@@ -18,6 +18,7 @@ import {
 import { Layout } from '../components/Layout';
 import { useAuth } from '../components/AuthProvider';
 import { api, mutation, type VotingData } from '../lib/api';
+import { useAdminDialog } from '../components/admin/AdminDialog';
 
 type Overview = {
   counts: { users: number; validVotes: number; excludedVotes: number };
@@ -245,11 +246,14 @@ export function Admin() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
   const csrf = auth.csrfToken ?? '';
+  const dialog = useAdminDialog();
 
+  const [loadFailures, setLoadFailures] = useState<string[]>([]);
   const loadCore = useCallback(async () => {
     if (!auth.isAdmin) return;
+    // allSettled: падение одного блока не мешает показать остальные.
     const [nextOverview, nextResults, nextPublic, nextCandidates, nextCustom] =
-      await Promise.all([
+      await Promise.allSettled([
         api<Overview>('/api/admin/overview'),
         api<AdminResults>('/api/admin/results'),
         api<VotingData>('/api/nominations'),
@@ -258,14 +262,26 @@ export function Admin() {
           '/api/admin/custom-awards?limit=200',
         ),
       ]);
-    setOverview(nextOverview);
-    setResults(nextResults);
-    setPublicData(nextPublic);
-    setCandidates(nextCandidates.candidates);
-    setCustomProposals(nextCustom.proposals);
-    setCustomAwardPublished(nextCustom.customAwardPublished);
+    const failures: string[] = [];
+    if (nextOverview.status === 'fulfilled') setOverview(nextOverview.value);
+    else failures.push('статистика');
+    if (nextResults.status === 'fulfilled') setResults(nextResults.value);
+    else failures.push('результаты');
+    if (nextPublic.status === 'fulfilled') setPublicData(nextPublic.value);
+    else failures.push('номинации');
+    if (nextCandidates.status === 'fulfilled')
+      setCandidates(nextCandidates.value.candidates);
+    else failures.push('кандидаты «Чаттера»');
+    if (nextCustom.status === 'fulfilled') {
+      setCustomProposals(nextCustom.value.proposals);
+      setCustomAwardPublished(nextCustom.value.customAwardPublished);
+    } else failures.push('«Ваша номинация»');
+    setLoadFailures(failures);
+    if (failures.length)
+      throw new Error(`Не загрузилось: ${failures.join(', ')}.`);
   }, [auth.isAdmin]);
 
+  const votesRequest = useRef(0);
   const loadVotes = useCallback(async () => {
     if (!auth.isAdmin) return;
     const params = new URLSearchParams({ page: String(page) });
@@ -274,9 +290,12 @@ export function Admin() {
     if (nominationFilter) params.set('nomination', nominationFilter);
     if (newAccounts) params.set('newAccounts', '1');
     if (sort !== 'latest') params.set('sort', sort);
+    const requestId = ++votesRequest.current;
     const nextVotes = await api<{ votes: AdminVote[]; pagination: Pagination }>(
       `/api/admin/votes?${params}`,
     );
+    // Пришёл ответ на устаревший запрос (фильтр уже поменялся) — не применяем.
+    if (requestId !== votesRequest.current) return;
     setVotes(nextVotes.votes);
     setPagination(nextVotes.pagination);
   }, [
@@ -364,7 +383,7 @@ export function Admin() {
     return true;
   };
 
-  const changeStatus = (status: 'preparation' | 'open' | 'closed') => {
+  const changeStatus = async (status: 'preparation' | 'open' | 'closed') => {
     const label =
       status === 'open'
         ? 'открыть'
@@ -372,9 +391,10 @@ export function Admin() {
           ? 'закрыть'
           : 'вернуть в подготовку';
     if (
-      !window.confirm(
+      !(await dialog.confirm(
         `Действительно ${label} голосование? Сохранённые голоса останутся в базе.`,
-      )
+        { confirmLabel: 'Да, изменить статус' },
+      ))
     )
       return;
     void act(
@@ -384,53 +404,90 @@ export function Admin() {
     );
   };
 
-  const moderateVote = (vote: AdminVote, all: boolean) => {
+  const exclusionReasons = [
+    'Подозрение на накрутку',
+    'Твинк / новый аккаунт',
+    'Голос за себя',
+    'Тестовый голос',
+    'Другая причина',
+  ];
+
+  const moderateVote = async (vote: AdminVote, all: boolean) => {
     const action = vote.status === 'valid' ? 'exclude' : 'restore';
-    const reason =
-      action === 'exclude'
-        ? window.prompt('Причина исключения:', 'Другая причина')
-        : '';
-    if (action === 'exclude' && !reason) return;
+    const target = vote.displayName || vote.login || vote.twitchUserId;
+    const values = await dialog.form({
+      title: action === 'exclude'
+        ? (all ? `Исключить все голоса ${target}?` : `Исключить голос ${target}?`)
+        : (all ? `Восстановить все голоса ${target}?` : `Восстановить голос ${target}?`),
+      message: all
+        ? 'Действие затронет все номинации этого аккаунта. Результаты будут помечены неактуальными.'
+        : `Номинация: ${vote.nominationTitle}. Результаты будут помечены неактуальными.`,
+      fields: [
+        ...(action === 'exclude'
+          ? [
+              { type: 'select' as const, name: 'reason', label: 'Причина', options: exclusionReasons, initial: 'Другая причина' },
+              { type: 'textarea' as const, name: 'comment', label: 'Комментарий (необязательно)', maxLength: 300 },
+            ]
+          : []),
+        ...(all
+          ? [{ type: 'checkbox' as const, name: 'includeCustomAward', label: action === 'exclude' ? 'Также исключить его предложение в «Вашей номинации»' : 'Также восстановить его предложение в «Вашей номинации»', initial: true }]
+          : []),
+      ],
+      confirmLabel: action === 'exclude' ? 'Исключить' : 'Восстановить',
+      danger: action === 'exclude',
+    });
+    if (!values) return;
     const path = all
       ? `/api/admin/users/${encodeURIComponent(vote.twitchUserId)}/${action}`
       : `/api/admin/votes/${vote.id}/${action}`;
     void act(
       `${all ? 'user' : 'vote'}-${all ? vote.twitchUserId : vote.id}`,
-      () => mutation(path, 'POST', csrf, { reason }),
-      action === 'exclude' ? 'Голос исключён.' : 'Голос восстановлен.',
+      () => mutation(path, 'POST', csrf, {
+        reason: values.reason ?? '',
+        comment: values.comment ?? '',
+        ...(all ? { includeCustomAward: values.includeCustomAward === '1' } : {}),
+      }),
+      action === 'exclude' ? (all ? 'Голоса аккаунта исключены.' : 'Голос исключён.') : (all ? 'Голоса аккаунта восстановлены.' : 'Голос восстановлен.'),
     );
   };
 
-  const selectProposal = (proposal: CustomProposal) => {
-    const awardTitle = window.prompt(
-      'Название награды для показа:',
-      proposal.selectedAwardTitle ?? proposal.awardTitle,
-    );
-    if (!awardTitle) return;
-    const recipient = window.prompt(
-      'Получатель награды:',
-      proposal.selectedRecipient ?? proposal.recipient,
-    );
-    if (!recipient) return;
+  const selectProposal = async (proposal: CustomProposal) => {
+    const values = await dialog.form({
+      title: 'Выбрать предложение для церемонии',
+      message: `Автор: ${proposal.displayName || proposal.login || proposal.twitchUserId}. Можно поправить формулировку для показа.`,
+      fields: [
+        { type: 'text', name: 'awardTitle', label: 'Название награды', initial: proposal.selectedAwardTitle ?? proposal.awardTitle, required: true, maxLength: 80 },
+        { type: 'text', name: 'recipient', label: 'Получатель награды', initial: proposal.selectedRecipient ?? proposal.recipient, required: true, maxLength: 80 },
+      ],
+      confirmLabel: 'Выбрать',
+    });
+    if (!values) return;
     void act(
       `custom-select-${proposal.twitchUserId}`,
       () =>
         mutation('/api/admin/custom-awards/select', 'POST', csrf, {
           twitchUserId: proposal.twitchUserId,
-          awardTitle,
-          recipient,
+          awardTitle: values.awardTitle,
+          recipient: values.recipient,
         }),
       'Предложение выбрано для церемонии.',
     );
   };
 
-  const moderateProposal = (proposal: CustomProposal) => {
+  const moderateProposal = async (proposal: CustomProposal) => {
     const status = proposal.status === 'valid' ? 'excluded' : 'valid';
-    const reason =
-      status === 'excluded'
-        ? window.prompt('Причина исключения:', 'Не подходит для церемонии')
-        : '';
-    if (status === 'excluded' && !reason) return;
+    let reason = '';
+    if (status === 'excluded') {
+      const values = await dialog.form({
+        title: 'Исключить предложение?',
+        message: `«${proposal.awardTitle}» → ${proposal.recipient}`,
+        fields: [{ type: 'select', name: 'reason', label: 'Причина', options: ['Не подходит для церемонии', 'Оскорбительное содержание', 'Спам / бессмыслица', 'Дубликат', 'Другая причина'], initial: 'Не подходит для церемонии' }],
+        confirmLabel: 'Исключить',
+        danger: true,
+      });
+      if (!values) return;
+      reason = values.reason;
+    }
     void act(
       `custom-${proposal.twitchUserId}`,
       () =>
@@ -490,6 +547,17 @@ export function Admin() {
         <RefreshCcw size={48} />
         <h1>ЗАГРУЖАЕМ ПАНЕЛЬ</h1>
         {error && <p className="form-error">{error}</p>}
+        {error && (
+          <button
+            className="button primary"
+            onClick={() => {
+              setError('');
+              void loadCore().catch(showLoadError);
+            }}
+          >
+            Повторить
+          </button>
+        )}
       </main>
     );
 
@@ -511,6 +579,7 @@ export function Admin() {
 
   return (
     <Layout>
+      {dialog.element}
       <main className="admin-page">
         <header className="admin-heading">
           <div>
@@ -535,6 +604,24 @@ export function Admin() {
             role={error ? 'alert' : 'status'}
           >
             {error || notice}
+          </div>
+        )}
+        {loadFailures.length > 0 && (
+          <div className="admin-load-failure" role="alert">
+            <AlertTriangle size={18} />
+            <span>
+              Не загрузилось: {loadFailures.join(', ')}. Остальные блоки
+              показаны по последним полученным данным.
+            </span>
+            <button
+              disabled={busy !== ''}
+              onClick={() => {
+                setError('');
+                void refreshAll().catch(showLoadError);
+              }}
+            >
+              <RefreshCcw size={15} /> Повторить
+            </button>
           </div>
         )}
         <section className="admin-stats">
@@ -578,7 +665,7 @@ export function Admin() {
             <div className="admin-actions">
               <button
                 className="primary"
-                onClick={() => changeStatus(primaryStatus)}
+                onClick={() => void changeStatus(primaryStatus)}
                 disabled={busy !== ''}
               >
                 {busy === `status-${primaryStatus}`
@@ -587,7 +674,7 @@ export function Admin() {
               </button>
               {votingStatus !== 'preparation' && (
                 <button
-                  onClick={() => changeStatus('preparation')}
+                  onClick={() => void changeStatus('preparation')}
                   disabled={busy !== ''}
                 >
                   {busy === 'status-preparation'
@@ -705,9 +792,9 @@ export function Admin() {
                   votingStatus !== 'closed' ||
                   !readiness?.ready
                 }
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    window.confirm(
+                    await dialog.confirm(
                       'Опубликовать «Вашу номинацию» для зрителей?',
                     )
                   )
@@ -755,7 +842,7 @@ export function Admin() {
                   </div>
                   <div className="admin-actions">
                     <button
-                      onClick={() => moderateProposal(proposal)}
+                      onClick={() => void moderateProposal(proposal)}
                       disabled={busy !== ''}
                     >
                       {proposal.status === 'valid'
@@ -764,7 +851,7 @@ export function Admin() {
                     </button>
                     <button
                       className="primary"
-                      onClick={() => selectProposal(proposal)}
+                      onClick={() => void selectProposal(proposal)}
                       disabled={proposal.status !== 'valid' || busy !== ''}
                     >
                       {busy === `custom-select-${proposal.twitchUserId}`
@@ -815,11 +902,11 @@ export function Admin() {
           </div>
           <form
             className="admin-inline-form"
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
               event.preventDefault();
               if (
                 candidateChangeNeedsWarning &&
-                !window.confirm(
+                !await dialog.confirm(
                   'Добавить кандидата и пометить результаты неактуальными?',
                 )
               )
@@ -860,10 +947,10 @@ export function Admin() {
                   </span>
                   <button
                     disabled={busy !== ''}
-                    onClick={() => {
+                    onClick={async () => {
                       if (
                         candidateChangeNeedsWarning &&
-                        !window.confirm(
+                        !await dialog.confirm(
                           'Изменить кандидата и пометить результаты неактуальными?',
                         )
                       )
@@ -999,7 +1086,7 @@ export function Admin() {
                       <div className="table-actions">
                         <button
                           className={vote.status === 'valid' ? 'danger' : 'restore'}
-                          onClick={() => moderateVote(vote, false)}
+                          onClick={() => void moderateVote(vote, false)}
                           disabled={busy !== ''}
                         >
                           {vote.status === 'valid'
@@ -1008,7 +1095,7 @@ export function Admin() {
                         </button>
                         <button
                           className={vote.status === 'valid' ? 'danger' : 'restore'}
-                          onClick={() => moderateVote(vote, true)}
+                          onClick={() => void moderateVote(vote, true)}
                           disabled={busy !== ''}
                         >
                           {vote.status === 'valid'
@@ -1056,8 +1143,10 @@ export function Admin() {
                 <p>
                   Снимок №{results.snapshot.revision} · зафиксирован{' '}
                   {formatDateTime(results.snapshot.created_at)}{' '}
-                  {results.dirty && (
+                  {results.dirty ? (
                     <strong>· Требуется повторная фиксация</strong>
+                  ) : (
+                    <strong className="snapshot-fresh">· Актуален</strong>
                   )}
                 </p>
               )}
@@ -1065,9 +1154,9 @@ export function Admin() {
             <div className="admin-actions">
               <button
                 disabled={busy !== ''}
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    window.confirm(
+                    await dialog.confirm(
                       'Зафиксировать текущие результаты? Голосование должно быть закрыто.',
                     )
                   )
@@ -1091,9 +1180,9 @@ export function Admin() {
               <button
                 className="primary"
                 disabled={busy !== ''}
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    window.confirm(
+                    await dialog.confirm(
                       'Опубликовать основные результаты для зрителей? «Ваша номинация» останется скрытой до отдельной команды.',
                     )
                   )
@@ -1172,8 +1261,8 @@ export function Admin() {
                         ) && (
                           <button
                             disabled={busy !== ''}
-                            onClick={() => {
-                              const reason = window.prompt(
+                            onClick={async () => {
+                              const reason = await dialog.prompt(
                                 `Причина статуса «без победителя» для «${problem.nominationTitle}»:`,
                               );
                               if (reason)
@@ -1273,8 +1362,8 @@ export function Admin() {
                           {entry.isTie === 1 && (
                             <button
                               disabled={busy !== ''}
-                              onClick={() => {
-                                const reason = window.prompt(
+                              onClick={async () => {
+                                const reason = await dialog.prompt(
                                   'Основание выбора победителя при ничьей:',
                                 );
                                 if (reason)

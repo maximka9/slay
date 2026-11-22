@@ -1,0 +1,17 @@
+# Тяжёлые и сгенерированные файлы, которые не нужны ИИ-ассистенту
+node_modules/
+dist/
+.wrangler/
+test-results/
+playwright-report/
+artifacts/
+backups/
+public/assets/**/*.mp4
+public/assets/**/*.jpg
+public/assets/**/*.jpeg
+public/assets/**/*.png
+public/assets/**/*.webp
+public/fonts/
+*.pptx
+*.zip
+package-lock.json

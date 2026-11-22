@@ -73,8 +73,11 @@ test('админ запускает репетицию, видит причин�
 
   const candidateLogin = page.getByPlaceholder('Twitch login');
   await candidateLogin.fill('missing_viewer');
-  page.once('dialog', dialog => void dialog.accept());
   await page.getByRole('button', { name: 'Найти и добавить' }).click();
+  const confirmDialog = page.getByRole('dialog', { name: 'Подтвердите действие' });
+  await expect(confirmDialog).toContainText('Добавить кандидата и пометить результаты неактуальными?');
+  await confirmDialog.getByRole('button', { name: 'Подтвердить' }).click();
+  await expect(confirmDialog).toHaveCount(0);
   await expect(candidateLogin).toHaveValue('missing_viewer');
 
   const audit = page.locator('.admin-section').filter({ has: page.getByRole('heading', { name: 'ЖУРНАЛ ДЕЙСТВИЙ' }) });
@@ -88,4 +91,58 @@ test('админ запускает репетицию, видит причин�
   ceremonyReady = true;
   await page.reload();
   await expect(page.getByRole('link', { name: /Начать церемонию/ }).first()).toHaveAttribute('href', '/present');
+});
+
+test('исключение голоса: модальное окно с причиной и тёмные кнопки модерации', async ({ page }) => {
+  const sent: Array<{ url: string; body: unknown }> = [];
+  const vote = {
+    id: 7, nominationId: 'game', nominationTitle: 'Игра года', candidateId: 'game-1', candidateName: 'Игра 1',
+    twitchUserId: '555', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z',
+    firstSeenAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z', status: 'valid',
+  };
+  await page.route('**/api/me', route => route.fulfill({ json: {
+    authenticated: true, isAdmin: true, csrfToken: 'csrf-admin',
+    user: { twitchUserId: '1', login: 'camca63', displayName: 'camca63', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-01-01T00:00:00Z' },
+  } }));
+  await page.route('**/api/admin/overview', route => route.fulfill({ json: {
+    counts: { users: 1, validVotes: 1, excludedVotes: 0 }, recent: { recentUsers: 1 }, lastVote: { lastVoteAt: null },
+    nominations: [{ id: 'game', title: 'Игра года', votes: 1, validVotes: 1 }], settings: { voting_status: 'open', chatter_free_input: '1' },
+  } }));
+  await page.route('**/api/admin/votes?*', route => route.fulfill({ json: { votes: [vote], pagination: { page: 1, limit: 100, total: 1, pages: 1 } } }));
+  await page.route('**/api/admin/results', route => route.fulfill({ status: 500, json: { error: 'Сбой результатов' } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [] } }));
+  await page.route('**/api/admin/candidates', route => route.fulfill({ json: { candidates: [] } }));
+  await page.route('**/api/admin/custom-awards?*', route => route.fulfill({ json: { proposals: [], customAwardPublished: false } }));
+  await page.route('**/api/admin/actions?*', route => route.fulfill({ json: { actions: [], pagination: { page: 1, limit: 3, total: 0, pages: 1 } } }));
+  await page.route('**/api/admin/votes/7/exclude', async route => {
+    sent.push({ url: route.request().url(), body: route.request().postDataJSON() });
+    await route.fulfill({ json: { ok: true, status: 'excluded' } });
+  });
+
+  await page.goto('/admin');
+  // Падение одного блока не роняет всю панель
+  await expect(page.locator('.admin-load-failure')).toContainText('результаты');
+  await expect(page.getByRole('button', { name: 'Свободный ввод ника: ВКЛ' })).toBeVisible();
+
+  const exclude = page.getByRole('button', { name: 'Один: исключить' });
+  await expect(exclude).toBeVisible();
+  const background = await exclude.evaluate(element => getComputedStyle(element).backgroundColor);
+  expect(background).toBe('rgb(24, 27, 38)');
+
+  await exclude.click();
+  const dialog = page.getByRole('dialog', { name: 'Исключить голос Viewer?' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Причина').selectOption('Твинк / новый аккаунт');
+  await dialog.getByLabel('Комментарий (необязательно)').fill('аккаунт создан вчера');
+  await dialog.getByRole('button', { name: 'Исключить' }).click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0].body).toEqual({ reason: 'Твинк / новый аккаунт', comment: 'аккаунт создан вчера' });
+
+  // Esc закрывает окно без запроса
+  await page.getByRole('button', { name: 'Все: исключить' }).click();
+  const allDialog = page.getByRole('dialog', { name: 'Исключить все голоса Viewer?' });
+  await expect(allDialog.getByLabel('Также исключить его предложение в «Вашей номинации»')).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(allDialog).toHaveCount(0);
+  expect(sent).toHaveLength(1);
 });
