@@ -167,7 +167,7 @@ export function Vote() {
           })}</div> : <div className="candidates-pending"><span>КАНДИДАТЫ ФОРМИРУЮТСЯ</span><h3>{nomination.id === 'chatter'
   ? (data.voting.chatterFreeInput ? 'Пока никого нет — впиши Twitch-ник первого кандидата ниже' : 'Кандидаты формируются по предложениям зрителей')
   : 'Список появится перед открытием голосования'}</h3></div>}
-          {nomination.id === 'chatter' && data.voting.chatterFreeInput && open && <form className="free-chatter" onSubmit={event => { event.preventDefault(); void choose(nomination, undefined, freeLogin).then(() => setFreeLogin('')); }}><label htmlFor="chatter-login">Twitch-ник кандидата</label><div><input id="chatter-login" value={freeLogin} onChange={event => setFreeLogin(event.target.value)} placeholder="username" required pattern="@?[A-Za-z0-9_]{3,25}" title="Twitch-ник: латинские буквы, цифры и _" autoComplete="off" spellCheck={false} maxLength={26} /><button className="button primary" disabled={pending === nomination.id}>Проверить и выбрать</button></div></form>}
+          {nomination.id === 'chatter' && data.voting.chatterFreeInput && open && <form className="free-chatter" onSubmit={event => { event.preventDefault(); void choose(nomination, undefined, freeLogin); }}><label htmlFor="chatter-login">Twitch-ник кандидата</label><div><input id="chatter-login" value={freeLogin} onChange={event => setFreeLogin(event.target.value)} placeholder="username" required pattern="@?[A-Za-z0-9_]{3,25}" title="Twitch-ник: латинские буквы, цифры и _" autoComplete="off" spellCheck={false} maxLength={26} /><button className="button primary" disabled={pending === nomination.id}>Проверить и выбрать</button></div></form>}
         </>}
       </section>;
     })}</div>

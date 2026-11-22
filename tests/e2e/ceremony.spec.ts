@@ -40,7 +40,7 @@ test('обзор, девять номинаций в новом порядке, 
   await expect(page.getByTestId('nominee-card')).toHaveCount(10);
   await expect(page.getByRole('heading', { name: 'Clair Obscur: Expedition 33' })).toBeVisible();
   await page.screenshot({ path: 'artifacts/screenshots-v5/04-games.png' });
-  for (const [scene, count, title] of [[7, 6, 'Ивент года'], [9, 7, 'DOTA 2 — Клип года'], [11, 8, 'Фейл года'], [13, 7, 'Завоз от комьюнити'], [15, 6, 'IRL года']] as const) {
+  for (const [scene, count, title] of [[7, 6, 'Ивент года'], [9, 8, 'DOTA 2 — Клип года'], [11, 8, 'Фейл года'], [13, 7, 'Завоз от комьюнити'], [15, 6, 'IRL года']] as const) {
     await page.goto(`/present?scene=${scene}`); await ready(page);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
     await expect(page.getByTestId('nominee-card')).toHaveCount(count);
