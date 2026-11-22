@@ -407,6 +407,8 @@ async function selectCustomAward(request: Request, env: Env) {
     env.DB.prepare('INSERT INTO moderation_actions (target_user_id, action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?, ?)')
       .bind(twitchUserId, 'custom_award_select', JSON.stringify({ awardTitle, recipient }), timestamp, admin.twitchUserId),
     setSetting(env, 'results_dirty', '1', timestamp),
+    // Новый выбор нельзя показывать по старой публикации — публикуется заново отдельной командой.
+    setSetting(env, 'custom_award_published', '0', timestamp),
   ]);
   return json({ ok: true, selection: { twitchUserId, awardTitle, recipient } });
 }
@@ -428,14 +430,19 @@ async function moderateVote(request: Request, env: Env, voteId: number, action: 
 
 async function moderateUser(request: Request, env: Env, twitchUserId: string, action: 'exclude' | 'restore') {
   const admin = await requireAdmin(request, env); requireCsrf(request, admin); await rateLimit(env, admin.sessionHash, 'moderation', 120);
-  const payload = await body<{ reason?: string; comment?: string }>(request);
+  const payload = await body<{ reason?: string; comment?: string; includeCustomAward?: boolean }>(request);
   const exists = await env.DB.prepare('SELECT twitch_user_id FROM users WHERE twitch_user_id = ?').bind(twitchUserId).first();
   if (!exists) throw new ApiError(404, 'Пользователь не найден.', 'user_not_found');
   const status = action === 'exclude' ? 'excluded' : 'valid';
   const timestamp = now();
   await env.DB.batch([
     env.DB.prepare('UPDATE votes SET status = ?, exclusion_reason = ?, exclusion_comment = ?, moderated_at = ? WHERE twitch_user_id = ?').bind(status, action === 'exclude' ? payload.reason || 'Другая причина' : null, action === 'exclude' ? payload.comment || null : null, timestamp, twitchUserId),
-    env.DB.prepare('INSERT INTO moderation_actions (target_user_id, action, reason, comment, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?, ?, ?)').bind(twitchUserId, `${action}_all`, payload.reason || null, payload.comment || null, timestamp, admin.twitchUserId),
+    env.DB.prepare('INSERT INTO moderation_actions (target_user_id, action, reason, comment, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(twitchUserId, `${action}_all`, payload.reason || null, payload.comment || null, JSON.stringify({ includeCustomAward: payload.includeCustomAward === true }), timestamp, admin.twitchUserId),
+    // По флагу — то же действие для предложения пользователя в «Вашей номинации» (если оно есть).
+    ...(payload.includeCustomAward === true ? [
+      env.DB.prepare(`UPDATE custom_award_proposals SET status = ?, exclusion_reason = ?, moderated_at = ?, moderated_by = ?
+        WHERE twitch_user_id = ?`).bind(status, action === 'exclude' ? payload.reason || 'Исключено вместе с голосами' : null, timestamp, admin.twitchUserId, twitchUserId),
+    ] : []),
     setSetting(env, 'results_dirty', '1', timestamp),
   ]);
   return json({ ok: true, status });

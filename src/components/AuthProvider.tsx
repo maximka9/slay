@@ -16,8 +16,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
   const logout = useCallback(async () => {
-    if (!state.csrfToken) return;
-    await mutation('/api/auth/logout', 'POST', state.csrfToken, {});
+    let token = state.csrfToken;
+    if (!token) {
+      // CSRF-токена нет (например, страница открыта давно) — сначала обновляем сессию.
+      const fresh = await api<MeResponse>('/api/me').catch(() => anonymous);
+      token = fresh.csrfToken;
+      if (!fresh.authenticated || !token) { setState(anonymous); return; }
+    }
+    await mutation('/api/auth/logout', 'POST', token, {});
     setState(anonymous);
   }, [state.csrfToken]);
   const value = useMemo<AuthState>(() => ({ ...state, loading, refresh, logout, loginUrl: (returnTo = '/vote') => `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}` }), [loading, logout, refresh, state]);
