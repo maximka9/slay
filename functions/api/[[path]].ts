@@ -132,7 +132,7 @@ async function myVotes(request: Request, env: Env) {
   const user = await requireUser(request, env);
   const result = await env.DB.prepare(`
     SELECT v.nomination_id AS nominationId, v.candidate_id AS candidateId, v.updated_at AS updatedAt, v.status,
-           c.name AS candidateName
+           c.name AS candidateName, c.twitch_login AS candidateLogin
     FROM votes v JOIN candidates c ON c.id = v.candidate_id
     WHERE v.twitch_user_id = ? ORDER BY v.nomination_id
   `).bind(user.twitchUserId).all();
@@ -196,7 +196,7 @@ async function ensureChatterCandidate(env: Env, twitch: TwitchUser): Promise<str
 
   const existing = await findByTwitchId();
   if (existing) {
-    if (existing.enabled !== 1) throw new ApiError(409, 'Этот кандидат скрыт модератором.', 'candidate_hidden');
+    if (existing.enabled !== 1) throw new ApiError(409, 'Этот ник снят с номинации модератором.', 'candidate_hidden');
     await env.DB
       .prepare('UPDATE candidates SET name = ?, image_url = ?, twitch_login = ? WHERE id = ?')
       .bind(twitch.display_name, twitch.profile_image_url, twitch.login, existing.id)
@@ -239,7 +239,8 @@ async function castVote(request: Request, env: Env, nominationId: string) {
   const globalStatus = await setting(env, 'voting_status');
   const nomination = await env.DB.prepare('SELECT id, enabled FROM nominations WHERE id = ?').bind(nominationId).first<Record<string, string | number | null>>();
   if (!nomination) throw new ApiError(404, 'Номинация не найдена.', 'nomination_not_found');
-  const chatterFreeInput = nominationId === 'chatter' && await setting(env, 'chatter_free_input') === '1';
+  // «Чаттер года»: зрители всегда вписывают ник, победитель — ник с наибольшим числом учтённых голосов.
+  const chatterFreeInput = nominationId === 'chatter';
   const availableCandidates = (await env.DB.prepare('SELECT COUNT(*) AS count FROM candidates WHERE nomination_id = ? AND enabled = 1').bind(nominationId).first<{ count: number }>())?.count ?? 0;
   const availability = votingAvailability({
     globalStatus,
@@ -249,15 +250,18 @@ async function castVote(request: Request, env: Env, nominationId: string) {
   });
   if (!availability.canVote) throw new ApiError(409, availability.unavailableReason ?? 'Голосование недоступно.', 'voting_unavailable');
   let candidateId = payload.candidateId?.trim() ?? '';
-  if (!candidateId && nominationId === 'chatter' && payload.twitchLogin && chatterFreeInput) {
+  if (nominationId === 'chatter') {
+    if (!payload.twitchLogin?.trim()) throw new ApiError(400, 'Впишите Twitch-ник.', 'twitch_login_required');
+    if (payload.twitchLogin.trim().replace(/^@/, '').toLowerCase() === user.login.toLowerCase()) throw new ApiError(400, 'Нельзя голосовать за себя.', 'self_vote_forbidden');
     const twitch = await resolveTwitchLogin(payload.twitchLogin, env);
     if (twitch.id === user.twitchUserId) throw new ApiError(400, 'Нельзя голосовать за себя.', 'self_vote_forbidden');
     candidateId = await ensureChatterCandidate(env, twitch);
   }
   if (!candidateId) throw new ApiError(400, 'Выберите номинанта.', 'candidate_required');
   const timestamp = now();
-  const candidate = await env.DB.prepare('SELECT id FROM candidates WHERE id = ? AND nomination_id = ? AND enabled = 1').bind(candidateId, nominationId).first();
+  const candidate = await env.DB.prepare('SELECT id, twitch_user_id FROM candidates WHERE id = ? AND nomination_id = ? AND enabled = 1').bind(candidateId, nominationId).first<{ id: string; twitch_user_id: string | null }>();
   if (!candidate) throw new ApiError(400, 'Номинант не относится к выбранной категории.', 'invalid_candidate');
+  if (candidate.twitch_user_id && candidate.twitch_user_id === user.twitchUserId) throw new ApiError(400, 'Нельзя голосовать за себя.', 'self_vote_forbidden');
   const current = await env.DB.prepare('SELECT id, candidate_id, status FROM votes WHERE nomination_id = ? AND twitch_user_id = ?').bind(nominationId, user.twitchUserId).first<{ id: number; candidate_id: string; status: string }>();
   if (current?.candidate_id === candidateId) return json({ ok: true, unchanged: true, vote: { nominationId, candidateId, status: current.status } });
   const statements = [];
@@ -328,8 +332,10 @@ async function adminCandidates(request: Request, env: Env) {
   await requireAdmin(request, env);
   const result = await env.DB.prepare(`SELECT c.id, c.nomination_id AS nominationId, n.title AS nominationTitle,
     c.name, c.image_url AS imageUrl, c.twitch_user_id AS twitchUserId, c.twitch_login AS twitchLogin,
-    c.enabled, c.sort_order AS sortOrder FROM candidates c JOIN nominations n ON n.id = c.nomination_id
-    ORDER BY n.sort_order, c.sort_order`).all();
+    c.enabled, c.sort_order AS sortOrder,
+    (SELECT COUNT(*) FROM votes v WHERE v.candidate_id = c.id AND v.status = 'valid') AS validVotes
+    FROM candidates c JOIN nominations n ON n.id = c.nomination_id
+    ORDER BY n.sort_order, validVotes DESC, c.sort_order`).all();
   return json({ candidates: result.results });
 }
 

@@ -713,3 +713,24 @@
 .admin-load-failure span { flex: 1; min-width: 220px; }
 .admin-load-failure button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; color: var(--text); background: #181b26; border: 1px solid #ffffff2e; cursor: pointer; }
 .snapshot-fresh { color: #7dffb0; }
+
+/* «Чаттер года»: только ввод ника */
+.free-chatter form > div { display: flex; gap: 10px; }
+.free-chatter-rules { margin: 0 0 16px; color: var(--muted); max-width: 760px; line-height: 1.6; }
+.free-chatter-current { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; padding: 12px 14px; color: var(--text); background: #111521; border: 1px solid var(--cyan); }
+.free-chatter-current svg { color: var(--cyan); }
+.free-chatter-current span { color: var(--muted); }
+.chatter-admin-list article { display: grid; grid-template-columns: 34px 1fr auto auto; align-items: center; gap: 12px; }
+.chatter-admin-list .chatter-rank { color: var(--muted); font-variant-numeric: tabular-nums; }
+.chatter-admin-list .chatter-votes { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chatter-admin-list article.is-hidden > span { opacity: .6; }
+@media (max-width: 760px) {
+  .free-chatter form > div { flex-direction: column; }
+  .chatter-admin-list article { grid-template-columns: 28px 1fr; }
+  .chatter-admin-list .chatter-votes, .chatter-admin-list button { grid-column: 2; justify-self: start; }
+}
+.chatter-admin-list { display: grid; gap: 8px; margin-top: 16px; }
+.chatter-admin-list article { padding: 10px 12px; background: #11141e; }
+.chatter-admin-list article > span:nth-child(2) { display: grid; min-width: 0; }
+.chatter-admin-list small { color: var(--muted); }
+.chatter-admin-list button { padding: 7px 9px; color: var(--text); border: 1px solid #ffffff20; background: #181b26; }

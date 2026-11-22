@@ -162,8 +162,32 @@ test('зритель вписывает Twitch-ник в «Чаттер года
   });
 
   await page.goto('/vote');
+  await expect(page.getByText('Победит ник, который напишут чаще всего.', { exact: false })).toBeVisible();
+  await expect(page.locator('#vote-chatter .voting-card')).toHaveCount(0);
+
+  // За себя нельзя — запрос даже не отправляется.
+  await page.locator('#chatter-login').fill('@Viewer');
+  await page.locator('.free-chatter button').click();
+  await expect(page.getByRole('alert')).toHaveText('Нельзя голосовать за себя.');
+  expect(sent).toHaveLength(0);
+
   await page.locator('#chatter-login').fill('some_user');
   await page.locator('.free-chatter button').click();
   await expect.poll(() => sent.length).toBe(1);
   expect(sent[0]).toMatchObject({ twitchLogin: 'some_user' });
+  await expect(page.getByTestId('chatter-current')).toContainText('@some_user');
+  await expect(page.locator('.free-chatter button')).toHaveText('Изменить голос');
+});
+
+test('«Чаттер года»: сохранённый голос показывается после перезагрузки', async ({ page }) => {
+  const chatter = {
+    id: 'chatter', title: 'Чаттер года', description: '', sortOrder: 8,
+    enabled: true, canVote: true, unavailableReason: null, candidates: [],
+  };
+  await page.route('**/api/me', route => route.fulfill({ json: { authenticated: true, isAdmin: false, csrfToken: 'csrf-test', user: { twitchUserId: '42', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-11-11T00:00:00Z' } } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [chatter] } }));
+  await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: [{ nominationId: 'chatter', candidateId: 'chatter-777', candidateName: 'Some_User', candidateLogin: 'some_user', updatedAt: '2026-11-11T00:00:00Z', status: 'valid' }] } }));
+  await page.route('**/api/my-custom-award', route => route.fulfill({ json: { proposal: null } }));
+  await page.goto('/vote');
+  await expect(page.getByTestId('chatter-current')).toContainText('Твой голос: @some_user');
 });
