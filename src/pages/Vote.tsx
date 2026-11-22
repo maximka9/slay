@@ -103,11 +103,13 @@ export function Vote() {
 
   const choose = async (nomination: VotingNomination, candidateId?: string, twitchLogin?: string) => {
     if (!auth.authenticated || !auth.csrfToken) { window.location.href = auth.loginUrl('/vote'); return; }
+    const cleanLogin = twitchLogin?.trim().replace(/^@/, '');
+    if (cleanLogin && auth.user && cleanLogin.toLowerCase() === auth.user.login.toLowerCase()) { setNotice(''); setError('Нельзя голосовать за себя.'); return; }
     setPending(nomination.id); setError(''); setNotice('');
     try {
       const result = await mutation<{ vote: MyVote }>(`/api/votes/${encodeURIComponent(nomination.id)}`, 'PUT', auth.csrfToken, { candidateId, twitchLogin });
       const candidate = nomination.candidates.find(item => item.id === result.vote.candidateId);
-      setVotes(current => ({ ...current, [nomination.id]: { ...result.vote, candidateName: candidate?.name ?? twitchLogin ?? 'Выбранный кандидат', updatedAt: new Date().toISOString() } }));
+      setVotes(current => ({ ...current, [nomination.id]: { ...result.vote, candidateName: candidate?.name ?? cleanLogin ?? 'Выбранный кандидат', candidateLogin: cleanLogin ?? candidate?.twitchLogin ?? null, updatedAt: new Date().toISOString() } }));
       setConfirmation(`vote:${nomination.id}:${result.vote.candidateId ?? twitchLogin ?? ''}`);
       setNotice(`Голос в номинации «${nomination.title}» сохранён.`);
       setFreeLogin('');
@@ -155,7 +157,11 @@ export function Vote() {
           <input id="custom-award-recipient" value={recipient} onChange={event => setRecipient(event.target.value)} maxLength={120} placeholder="Ник, имя или название команды" required disabled={!open || pending === nomination.id} />
           {proposal?.status === 'excluded' && <p className="form-error" role="status">Предложение исключено модератором. Изменение текста не снимает ограничение.</p>}
           <button className="button primary" disabled={!open || pending === nomination.id}>{pending === nomination.id ? 'СОХРАНЯЕМ…' : proposal ? 'ОБНОВИТЬ ПРЕДЛОЖЕНИЕ' : 'СОХРАНИТЬ ПРЕДЛОЖЕНИЕ'}</button>
-        </form> : <>
+        </form> : nomination.id === 'chatter' ? <div className={`free-chatter ${confirmation.startsWith('vote:chatter') ? 'just-confirmed' : ''}`}>
+          <p className="free-chatter-rules">Впиши Twitch-ник того, кого считаешь чаттером года. Победит ник, который напишут чаще всего. Голосовать за себя нельзя, изменить голос можно до закрытия голосования.</p>
+          {votes.chatter && <p className="free-chatter-current" data-testid="chatter-current"><Check size={18} /> Твой голос: <b>{votes.chatter.candidateLogin ? `@${votes.chatter.candidateLogin}` : votes.chatter.candidateName}</b>{votes.chatter.status === 'excluded' && <span> — исключён модератором</span>}</p>}
+          {open ? <form onSubmit={event => { event.preventDefault(); void choose(nomination, undefined, freeLogin); }}><label htmlFor="chatter-login">Twitch-ник</label><div><input id="chatter-login" value={freeLogin} onChange={event => setFreeLogin(event.target.value)} placeholder="username" required pattern="@?[A-Za-z0-9_]{3,25}" title="Twitch-ник: латинские буквы, цифры и _" autoComplete="off" spellCheck={false} maxLength={26} /><button className="button primary" disabled={pending === nomination.id}>{pending === nomination.id ? 'ПРОВЕРЯЕМ…' : votes.chatter ? 'Изменить голос' : 'Проголосовать'}</button></div></form> : null}
+        </div> : <>
           {nomination.candidates.length ? <div className={`voting-grid ${nomination.candidates.length > 6 ? 'many' : ''}`}>{nomination.candidates.map((candidate, index) => {
             const nominee = nomineeFor(candidate); const isSelected = selected === candidate.id; const hasVideo = Boolean(nominee.videos?.length);
             return <article className={`voting-card ${isSelected ? 'selected' : ''} ${confirmation === `vote:${nomination.id}:${candidate.id}` ? 'just-confirmed' : ''}`} key={candidate.id}>
@@ -164,10 +170,7 @@ export function Vote() {
               {hasVideo && <button className="clip-watch-button" onClick={() => setViewer({ category: localCategory, nominee })}><Play size={17} fill="currentColor" /> Смотреть клип</button>}
               <button className={`vote-choice ${isSelected ? 'chosen' : ''}`} disabled={!open || pending === nomination.id} onClick={() => void choose(nomination, candidate.id)}>{isSelected ? <><Check size={18} /> Мой голос</> : <>Выбрать <ChevronRight size={18} /></>}</button>
             </article>;
-          })}</div> : <div className="candidates-pending"><span>КАНДИДАТЫ ФОРМИРУЮТСЯ</span><h3>{nomination.id === 'chatter'
-  ? (data.voting.chatterFreeInput ? 'Пока никого нет — впиши Twitch-ник первого кандидата ниже' : 'Кандидаты формируются по предложениям зрителей')
-  : 'Список появится перед открытием голосования'}</h3></div>}
-          {nomination.id === 'chatter' && data.voting.chatterFreeInput && open && <form className="free-chatter" onSubmit={event => { event.preventDefault(); void choose(nomination, undefined, freeLogin); }}><label htmlFor="chatter-login">Twitch-ник кандидата</label><div><input id="chatter-login" value={freeLogin} onChange={event => setFreeLogin(event.target.value)} placeholder="username" required pattern="@?[A-Za-z0-9_]{3,25}" title="Twitch-ник: латинские буквы, цифры и _" autoComplete="off" spellCheck={false} maxLength={26} /><button className="button primary" disabled={pending === nomination.id}>Проверить и выбрать</button></div></form>}
+          })}</div> : <div className="candidates-pending"><span>КАНДИДАТЫ ФОРМИРУЮТСЯ</span><h3>Список появится перед открытием голосования</h3></div>}
         </>}
       </section>;
     })}</div>

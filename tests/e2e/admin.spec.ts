@@ -27,9 +27,11 @@ test('админ запускает репетицию, видит причин�
       : { ready: false, problems: [{ nominationId: 'custom-award', nominationTitle: 'Ваша номинация', code: 'custom_award_selection_missing', message: 'Ваша номинация: выберите предложение для вручения.' }] },
   } }));
   await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'closed', chatterFreeInput: false }, nominations: [{ id: 'game', title: 'Игра года', description: '', sortOrder: 1, enabled: true, canVote: false, unavailableReason: 'Голосование закрыто.', candidates: [] }] } }));
-  await page.route('**/api/admin/candidates', route => route.request().method() === 'POST'
-    ? route.fulfill({ status: 500, json: { error: 'Кандидат не добавлен' } })
-    : route.fulfill({ json: { candidates: [] } }));
+  await page.route('**/api/admin/candidates', route => route.fulfill({ json: { candidates: [
+    { id: 'chatter-9', nominationId: 'chatter', name: 'Troll', twitchLogin: 'troll', enabled: 1, validVotes: 1 },
+  ] } }));
+  let hideRequests = 0;
+  await page.route('**/api/admin/candidates/chatter-9', route => { hideRequests++; return route.fulfill({ status: 500, json: { error: 'Ник не снят' } }); });
   await page.route('**/api/admin/custom-awards?*', route => route.fulfill({ json: { proposals: [], customAwardPublished: false, pagination: { page: 1, limit: 200, total: 0, pages: 1 } } }));
   await page.route('**/api/admin/actions?*', route => {
     const url = new URL(route.request().url());
@@ -71,14 +73,12 @@ test('админ запускает репетицию, видит причин�
   await expect.poll(() => voteRequests).toBeGreaterThan(votesBeforeSearch);
   expect(overviewRequests).toBe(overviewBeforeSearch);
 
-  const candidateLogin = page.getByPlaceholder('Twitch login');
-  await candidateLogin.fill('missing_viewer');
-  await page.getByRole('button', { name: 'Найти и добавить' }).click();
-  const confirmDialog = page.getByRole('dialog', { name: 'Подтвердите действие' });
-  await expect(confirmDialog).toContainText('Добавить кандидата и пометить результаты неактуальными?');
-  await confirmDialog.getByRole('button', { name: 'Подтвердить' }).click();
+  await page.locator('.chatter-admin-list').getByRole('button', { name: 'Снять' }).click();
+  const confirmDialog = page.getByRole('dialog', { name: 'Снять @troll с номинации?' });
+  await expect(confirmDialog).toContainText('Результаты будут помечены неактуальными.');
+  await confirmDialog.getByRole('button', { name: 'Снять' }).click();
   await expect(confirmDialog).toHaveCount(0);
-  await expect(candidateLogin).toHaveValue('missing_viewer');
+  await expect.poll(() => hideRequests).toBe(1);
 
   const audit = page.locator('.admin-section').filter({ has: page.getByRole('heading', { name: 'ЖУРНАЛ ДЕЙСТВИЙ' }) });
   await expect(audit.locator('.audit-list article')).toHaveCount(3);
@@ -111,7 +111,11 @@ test('исключение голоса: модальное окно с прич
   await page.route('**/api/admin/votes?*', route => route.fulfill({ json: { votes: [vote], pagination: { page: 1, limit: 100, total: 1, pages: 1 } } }));
   await page.route('**/api/admin/results', route => route.fulfill({ status: 500, json: { error: 'Сбой результатов' } }));
   await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [] } }));
-  await page.route('**/api/admin/candidates', route => route.fulfill({ json: { candidates: [] } }));
+  await page.route('**/api/admin/candidates', route => route.fulfill({ json: { candidates: [
+    { id: 'chatter-2', nominationId: 'chatter', name: 'Second', twitchLogin: 'second', enabled: 1, validVotes: 2 },
+    { id: 'chatter-1', nominationId: 'chatter', name: 'First', twitchLogin: 'first', enabled: 1, validVotes: 5 },
+    { id: 'chatter-3', nominationId: 'chatter', name: 'Banned', twitchLogin: 'banned', enabled: 0, validVotes: 0 },
+  ] } }));
   await page.route('**/api/admin/custom-awards?*', route => route.fulfill({ json: { proposals: [], customAwardPublished: false } }));
   await page.route('**/api/admin/actions?*', route => route.fulfill({ json: { actions: [], pagination: { page: 1, limit: 3, total: 0, pages: 1 } } }));
   await page.route('**/api/admin/votes/7/exclude', async route => {
@@ -122,7 +126,13 @@ test('исключение голоса: модальное окно с прич
   await page.goto('/admin');
   // Падение одного блока не роняет всю панель
   await expect(page.locator('.admin-load-failure')).toContainText('результаты');
-  await expect(page.getByRole('button', { name: 'Свободный ввод ника: ВКЛ' })).toBeVisible();
+  // «Чаттер года»: ники по убыванию голосов, переключателя свободного ввода больше нет
+  await expect(page.getByRole('button', { name: /Свободный ввод ника/ })).toHaveCount(0);
+  await expect(page.locator('.chatter-admin-list article')).toHaveCount(3);
+  await expect(page.locator('.chatter-admin-list article').first()).toContainText('@first');
+  await expect(page.locator('.chatter-admin-list article').first()).toContainText('5 голосов');
+  await expect(page.locator('.chatter-admin-list article').nth(1)).toContainText('2 голоса');
+  await expect(page.locator('.chatter-admin-list article').nth(2)).toContainText('снят');
 
   const exclude = page.getByRole('button', { name: 'Один: исключить' });
   await expect(exclude).toBeVisible();

@@ -98,7 +98,15 @@ type AdminCandidate = {
   name: string;
   twitchLogin: string | null;
   enabled: number;
+  validVotes?: number;
 };
+function plural(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'голос';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'голоса';
+  return 'голосов';
+}
 type AuditAction = {
   id: number;
   action: string;
@@ -241,7 +249,6 @@ export function Admin() {
   const [nominationFilter, setNominationFilter] = useState('');
   const [newAccounts, setNewAccounts] = useState(false);
   const [sort, setSort] = useState('latest');
-  const [candidateLogin, setCandidateLogin] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
@@ -574,7 +581,9 @@ export function Admin() {
         : 'Открыть голосование';
   const candidateChangeNeedsWarning =
     overview.counts.validVotes > 0 || votingStatus !== 'preparation';
-  const chatterFreeInput = overview.settings.chatter_free_input === '1';
+  const chatterCandidates = candidates
+    .filter((candidate) => candidate.nominationId === 'chatter')
+    .sort((a, b) => (b.enabled - a.enabled) || ((b.validVotes ?? 0) - (a.validVotes ?? 0)));
   const readiness = results?.readiness;
 
   return (
@@ -873,85 +882,49 @@ export function Admin() {
           <div className="admin-section-title">
             <div>
               <span className="eyebrow">ЧАТТЕР ГОДА</span>
-              <h2>УПРАВЛЕНИЕ КАНДИДАТАМИ</h2>
+              <h2>ВПИСАННЫЕ НИКИ</h2>
               <p>
-                Изменение состава после фиксации помечает результаты как
-                неактуальные.
+                Ники появляются сами, когда зрители их вписывают. Побеждает ник
+                с наибольшим числом учтённых голосов. Голосовать за себя нельзя.
+                Снятый ник не участвует в подсчёте, и за него больше нельзя
+                проголосовать.
               </p>
             </div>
-            <div className="admin-actions">
-              <button
-                className={chatterFreeInput ? 'primary' : undefined}
-                disabled={busy !== ''}
-                onClick={() =>
-                  void act(
-                    'chatter-free-input',
-                    () =>
-                      mutation('/api/admin/settings/chatter-free-input', 'POST', csrf, {
-                        enabled: !chatterFreeInput,
-                      }),
-                    chatterFreeInput
-                      ? 'Свободный ввод ника выключен.'
-                      : 'Свободный ввод ника включён.',
-                  )
-                }
-              >
-                {chatterFreeInput ? 'Свободный ввод ника: ВКЛ' : 'Свободный ввод ника: ВЫКЛ'}
-              </button>
-            </div>
           </div>
-          <form
-            className="admin-inline-form"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (
-                candidateChangeNeedsWarning &&
-                !await dialog.confirm(
-                  'Добавить кандидата и пометить результаты неактуальными?',
-                )
-              )
-                return;
-              void (async () => {
-                const saved = await act(
-                  'candidate',
-                  () =>
-                    mutation('/api/admin/candidates', 'POST', csrf, {
-                      nominationId: 'chatter',
-                      twitchLogin: candidateLogin,
-                    }),
-                  'Кандидат Twitch добавлен.',
-                );
-                if (saved) setCandidateLogin('');
-              })();
-            }}
-          >
-            <input
-              value={candidateLogin}
-              onChange={(event) => setCandidateLogin(event.target.value)}
-              placeholder="Twitch login"
-              required
-            />
-            <button className="button primary" disabled={busy !== ''}>
-              <Plus size={17} />{' '}
-              {busy === 'candidate' ? 'ДОБАВЛЯЕМ…' : 'Найти и добавить'}
-            </button>
-          </form>
-          <div className="candidate-admin-list">
-            {candidates
-              .filter((candidate) => candidate.nominationId === 'chatter')
-              .map((candidate) => (
-                <article key={candidate.id}>
+          {chatterCandidates.length ? (
+            <div className="chatter-admin-list">
+              {chatterCandidates.map((candidate, index) => (
+                <article
+                  key={candidate.id}
+                  className={candidate.enabled === 1 ? undefined : 'is-hidden'}
+                >
+                  <span className="chatter-rank">{index + 1}</span>
                   <span>
                     <b>{candidate.name}</b>
                     <small>@{candidate.twitchLogin}</small>
                   </span>
+                  <span className="chatter-votes">
+                    {candidate.enabled === 1
+                      ? `${candidate.validVotes ?? 0} ${plural(candidate.validVotes ?? 0)}`
+                      : 'снят'}
+                  </span>
                   <button
                     disabled={busy !== ''}
                     onClick={async () => {
+                      const hide = candidate.enabled === 1;
                       if (
-                        candidateChangeNeedsWarning &&
                         !await dialog.confirm(
-                          'Изменить кандидата и пометить результаты неактуальными?',
+                          (hide
+                            ? 'Его голоса перестанут учитываться, а зрители не смогут за него проголосовать.'
+                            : 'Его учтённые голоса снова войдут в подсчёт.')
+                            + (candidateChangeNeedsWarning ? ' Результаты будут помечены неактуальными.' : ''),
+                          {
+                            title: hide
+                              ? `Снять @${candidate.twitchLogin} с номинации?`
+                              : `Вернуть @${candidate.twitchLogin} в номинацию?`,
+                            confirmLabel: hide ? 'Снять' : 'Вернуть',
+                            danger: hide,
+                          },
                         )
                       )
                         return;
@@ -962,19 +935,20 @@ export function Admin() {
                             `/api/admin/candidates/${encodeURIComponent(candidate.id)}`,
                             'PATCH',
                             csrf,
-                            { enabled: candidate.enabled !== 1 },
+                            { enabled: !hide },
                           ),
-                        candidate.enabled === 1
-                          ? 'Кандидат скрыт.'
-                          : 'Кандидат восстановлен.',
+                        hide ? 'Ник снят с номинации.' : 'Ник возвращён в номинацию.',
                       );
                     }}
                   >
-                    {candidate.enabled === 1 ? 'Скрыть' : 'Восстановить'}
+                    {candidate.enabled === 1 ? 'Снять' : 'Вернуть'}
                   </button>
                 </article>
               ))}
-          </div>
+            </div>
+          ) : (
+            <p className="admin-empty">Пока никто не вписал ни одного ника.</p>
+          )}
         </section>
 
         <section className="admin-section">

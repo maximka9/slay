@@ -12,7 +12,7 @@ export type VotingData = {
   voting: { status: 'preparation' | 'open' | 'closed'; chatterFreeInput: boolean };
   nominations: VotingNomination[];
 };
-export type MyVote = { nominationId: string; candidateId: string; candidateName: string; updatedAt: string; status: 'valid' | 'excluded' };
+export type MyVote = { nominationId: string; candidateId: string; candidateName: string; candidateLogin?: string | null; updatedAt: string; status: 'valid' | 'excluded' };
 export type CustomAwardProposal = {
   awardTitle: string;
   recipient: string;

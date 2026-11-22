@@ -14,15 +14,17 @@ export function setSetting(env: Env, key: string, value: string, timestamp: stri
 
 export async function publicNominations(env: Env) {
   const [settings, nominations, candidates] = await Promise.all([
-    env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('voting_status','chatter_free_input')").all<{ key: string; value: string }>(),
+    env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('voting_status')").all<{ key: string; value: string }>(),
     env.DB.prepare('SELECT id, title, description, sort_order, enabled FROM nominations WHERE enabled = 1 ORDER BY sort_order').all(),
     env.DB.prepare('SELECT id, nomination_id, name, image_url, twitch_login, sort_order FROM candidates WHERE enabled = 1 ORDER BY nomination_id, sort_order').all(),
   ]);
   const values = Object.fromEntries(settings.results.map(row => [row.key, row.value]));
   const globalStatus = values.voting_status ?? 'preparation';
-  const chatterFreeInput = values.chatter_free_input === '1';
+  // «Чаттер года» — только свободный ввод ника; список вписанных ников публично не показывается,
+  // чтобы зрители писали ник сами, а не выбирали из чужих вариантов.
+  const chatterFreeInput = true;
   const mappedNominations = nominations.results.map((nomination: Record<string, unknown>) => {
-    const nominationCandidates = candidates.results
+    const nominationCandidates = nomination.id === 'chatter' ? [] : candidates.results
       .filter((candidate: Record<string, unknown>) => candidate.nomination_id === nomination.id)
       .map((candidate: Record<string, unknown>) => ({
         id: candidate.id,

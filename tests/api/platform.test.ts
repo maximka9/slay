@@ -102,4 +102,14 @@ describe('voting platform invariants', () => {
     expect(apiSource).toContain("COUNT(*) AS count FROM moderation_actions");
     expect(apiSource).toContain("LIMIT ? OFFSET ?");
   });
+
+  it('«Чаттер года»: только ввод ника и запрет голоса за себя на любом пути', () => {
+    const dataSource = readFileSync(resolve(root, 'functions/_lib/data.ts'), 'utf8');
+    const chatterMigration = readFileSync(resolve(root, 'migrations/0011_chatter_free_input_only.sql'), 'utf8');
+    expect(apiSource).toContain("const chatterFreeInput = nominationId === 'chatter';");
+    expect(apiSource).toContain("'twitch_login_required'");
+    expect(apiSource).toContain("candidate.twitch_user_id === user.twitchUserId");
+    expect(dataSource).toContain("nomination.id === 'chatter' ? []");
+    expect(chatterMigration).toContain("exclusion_reason = 'Голос за себя'");
+  });
 });
