@@ -156,6 +156,8 @@ const auditLabels: Record<string, string> = {
   candidate_create: 'Кандидат добавлен',
   candidate_update: 'Кандидат изменён',
   nomination_update: 'Номинация изменена',
+  chatter_free_input_on: 'Свободный ввод ника в «Чаттере» включён',
+  chatter_free_input_off: 'Свободный ввод ника в «Чаттере» выключен',
 };
 
 function formatDateTime(value: string | null | undefined) {
@@ -504,6 +506,7 @@ export function Admin() {
         : 'Открыть голосование';
   const candidateChangeNeedsWarning =
     overview.counts.validVotes > 0 || votingStatus !== 'preparation';
+  const chatterFreeInput = overview.settings.chatter_free_input === '1';
   const readiness = results?.readiness;
 
   return (
@@ -789,6 +792,26 @@ export function Admin() {
                 неактуальные.
               </p>
             </div>
+            <div className="admin-actions">
+              <button
+                className={chatterFreeInput ? 'primary' : undefined}
+                disabled={busy !== ''}
+                onClick={() =>
+                  void act(
+                    'chatter-free-input',
+                    () =>
+                      mutation('/api/admin/settings/chatter-free-input', 'POST', csrf, {
+                        enabled: !chatterFreeInput,
+                      }),
+                    chatterFreeInput
+                      ? 'Свободный ввод ника выключен.'
+                      : 'Свободный ввод ника включён.',
+                  )
+                }
+              >
+                {chatterFreeInput ? 'Свободный ввод ника: ВКЛ' : 'Свободный ввод ника: ВЫКЛ'}
+              </button>
+            </div>
           </div>
           <form
             className="admin-inline-form"
@@ -889,6 +912,7 @@ export function Admin() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Ник или Twitch ID"
+                maxLength={23}
               />
             </label>
             <select
@@ -974,6 +998,7 @@ export function Admin() {
                     <td>
                       <div className="table-actions">
                         <button
+                          className={vote.status === 'valid' ? 'danger' : 'restore'}
                           onClick={() => moderateVote(vote, false)}
                           disabled={busy !== ''}
                         >
@@ -982,6 +1007,7 @@ export function Admin() {
                             : 'Один: восстановить'}
                         </button>
                         <button
+                          className={vote.status === 'valid' ? 'danger' : 'restore'}
                           onClick={() => moderateVote(vote, true)}
                           disabled={busy !== ''}
                         >

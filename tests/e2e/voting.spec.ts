@@ -145,3 +145,25 @@ test('обычному Twitch-пользователю закрыта админ
   await expect(page.getByRole('heading', { name: /ДОСТУП ЗАКРЫТ/ })).toBeVisible();
   await expect(page.getByText('Этот Twitch ID не входит в список администраторов.')).toBeVisible();
 });
+
+test('зритель вписывает Twitch-ник в «Чаттер года»', async ({ page }) => {
+  const sent: unknown[] = [];
+  const chatter = {
+    id: 'chatter', title: 'Чаттер года', description: 'Самый заметный зритель', sortOrder: 8,
+    enabled: true, canVote: true, unavailableReason: null, candidates: [],
+  };
+  await page.route('**/api/me', route => route.fulfill({ json: { authenticated: true, isAdmin: false, csrfToken: 'csrf-test', user: { twitchUserId: '42', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-11-11T00:00:00Z' } } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [chatter] } }));
+  await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: [] } }));
+  await page.route('**/api/my-custom-award', route => route.fulfill({ json: { proposal: null } }));
+  await page.route('**/api/votes/chatter', async route => {
+    sent.push(route.request().postDataJSON());
+    await route.fulfill({ json: { vote: { nominationId: 'chatter', candidateId: 'chatter-777', candidateName: 'Some_User', updatedAt: '2026-11-11T00:00:00Z', status: 'valid' } } });
+  });
+
+  await page.goto('/vote');
+  await page.locator('#chatter-login').fill('some_user');
+  await page.locator('.free-chatter button').click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0]).toMatchObject({ twitchLogin: 'some_user' });
+});

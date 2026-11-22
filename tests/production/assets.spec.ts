@@ -2,13 +2,13 @@ import { test, expect } from '@playwright/test';
 import { readFile, stat } from 'node:fs/promises';
 import { awards } from '../../src/data/awards';
 
-test('production: 52 превью, 60 видео, маршруты и локальные шрифты', async ({ page, request }) => {
+test('production: 53 превью, 61 видео, маршруты и локальные шрифты', async ({ page, request }) => {
   const errors: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
   const requests: string[] = [];
   page.on('request', r => requests.push(r.url()));
   const media = awards.categories.flatMap(c => c.nominees.flatMap(n => n.media ? [n.media.src] : []));
-  expect(media).toHaveLength(52);
+  expect(media).toHaveLength(53);
   for (const src of media) {
     const response = await request.get(encodeURI(src));
     expect(response.ok(), src).toBe(true);
@@ -16,7 +16,7 @@ test('production: 52 превью, 60 видео, маршруты и локал
     expect((await response.body()).equals(await readFile(`public${src}`)), src).toBe(true);
   }
   const videos = awards.categories.flatMap(c => c.nominees.flatMap(n => n.videos ?? []));
-  expect(videos).toHaveLength(60);
+  expect(videos).toHaveLength(61);
   for (const item of videos) {
     const response = await request.head(encodeURI(item.src));
     expect(response.ok(), item.src).toBe(true);

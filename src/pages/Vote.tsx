@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Check, ChevronRight, LogIn, LogOut, Play, ShieldCheck, Sparkles, Vote as VoteIcon } from 'lucide-react';
 import { awards, type Category, type Nominee } from '../data/awards';
 import { Layout } from '../components/Layout';
@@ -29,6 +30,23 @@ function categoryFor(nomination: VotingNomination): Category {
 export function Vote() {
   const auth = useAuth();
   const [data, setData] = useState<VotingData | null>(null);
+  // Прокрутка к номинации из ссылки вида /vote#vote-game (плитки на главной)
+  const location = useLocation();
+  const scrolledHash = useRef('');
+  useEffect(() => {
+    if (!data) return;
+    const targetId = decodeURIComponent(location.hash.replace(/^#/, ''));
+    if (!targetId.startsWith('vote-') || scrolledHash.current === targetId) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      scrolledHash.current = targetId;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target.classList.add('is-targeted');
+      window.setTimeout(() => target.classList.remove('is-targeted'), 1800);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [data, location.hash]);
   const [votes, setVotes] = useState<Record<string, MyVote>>({});
   const [proposal, setProposal] = useState<CustomAwardProposal | null>(null);
   const [awardTitle, setAwardTitle] = useState('');
@@ -146,8 +164,10 @@ export function Vote() {
               {hasVideo && <button className="clip-watch-button" onClick={() => setViewer({ category: localCategory, nominee })}><Play size={17} fill="currentColor" /> Смотреть клип</button>}
               <button className={`vote-choice ${isSelected ? 'chosen' : ''}`} disabled={!open || pending === nomination.id} onClick={() => void choose(nomination, candidate.id)}>{isSelected ? <><Check size={18} /> Мой голос</> : <>Выбрать <ChevronRight size={18} /></>}</button>
             </article>;
-          })}</div> : <div className="candidates-pending"><span>КАНДИДАТЫ ФОРМИРУЮТСЯ</span><h3>{nomination.id === 'chatter' ? 'Кандидаты формируются по предложениям зрителей' : 'Список появится перед открытием голосования'}</h3></div>}
-          {nomination.id === 'chatter' && data.voting.chatterFreeInput && open && <form className="free-chatter" onSubmit={event => { event.preventDefault(); void choose(nomination, undefined, freeLogin); }}><label htmlFor="chatter-login">Twitch-ник кандидата</label><div><input id="chatter-login" value={freeLogin} onChange={event => setFreeLogin(event.target.value)} placeholder="username" required /><button className="button primary" disabled={pending === nomination.id}>Проверить и выбрать</button></div></form>}
+          })}</div> : <div className="candidates-pending"><span>КАНДИДАТЫ ФОРМИРУЮТСЯ</span><h3>{nomination.id === 'chatter'
+  ? (data.voting.chatterFreeInput ? 'Пока никого нет — впиши Twitch-ник первого кандидата ниже' : 'Кандидаты формируются по предложениям зрителей')
+  : 'Список появится перед открытием голосования'}</h3></div>}
+          {nomination.id === 'chatter' && data.voting.chatterFreeInput && open && <form className="free-chatter" onSubmit={event => { event.preventDefault(); void choose(nomination, undefined, freeLogin).then(() => setFreeLogin('')); }}><label htmlFor="chatter-login">Twitch-ник кандидата</label><div><input id="chatter-login" value={freeLogin} onChange={event => setFreeLogin(event.target.value)} placeholder="username" required pattern="@?[A-Za-z0-9_]{3,25}" title="Twitch-ник: латинские буквы, цифры и _" autoComplete="off" spellCheck={false} maxLength={26} /><button className="button primary" disabled={pending === nomination.id}>Проверить и выбрать</button></div></form>}
         </>}
       </section>;
     })}</div>

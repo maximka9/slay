@@ -43,15 +43,33 @@ async function fetchTwitchUser(accessToken: string, env: Env, login?: string) {
   return payload.data[0];
 }
 
-export async function resolveTwitchLogin(login: string, env: Env) {
-  const normalized = login.trim().replace(/^@/, '').toLowerCase();
-  if (!/^[a-z0-9_]{4,25}$/.test(normalized)) throw new ApiError(400, 'Некорректный Twitch-ник.', 'invalid_twitch_login');
+// Кэш app-токена Twitch в памяти воркера: не запрашиваем новый токен на каждый ник.
+let appToken: { value: string; expiresAt: number } | null = null;
+
+async function getAppToken(env: Env, force = false) {
+  if (!force && appToken && appToken.expiresAt > Date.now() + 60_000) return appToken.value;
   const token = await tokenRequest(new URLSearchParams({
     client_id: env.TWITCH_CLIENT_ID,
     client_secret: env.TWITCH_CLIENT_SECRET,
     grant_type: 'client_credentials',
   }), env);
-  return fetchTwitchUser(token.access_token, env, normalized);
+  const lifetimeMs = (Number(token.expires_in) || 3600) * 1000;
+  appToken = { value: token.access_token, expiresAt: Date.now() + lifetimeMs };
+  return appToken.value;
+}
+
+export async function resolveTwitchLogin(login: string, env: Env) {
+  const normalized = login.trim().replace(/^@/, '').toLowerCase();
+  if (!/^[a-z0-9_]{3,25}$/.test(normalized)) throw new ApiError(400, 'Некорректный Twitch-ник. Допустимы латинские буквы, цифры и _.', 'invalid_twitch_login');
+  try {
+    return await fetchTwitchUser(await getAppToken(env), env, normalized);
+  } catch (error) {
+    // Токен мог протухнуть раньше срока — одна повторная попытка со свежим токеном.
+    if (error instanceof ApiError && error.code === 'twitch_profile_failed') {
+      return fetchTwitchUser(await getAppToken(env, true), env, normalized);
+    }
+    throw error;
+  }
 }
 
 export function authorizeUrl(state: string, env: Env) {

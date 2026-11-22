@@ -42,7 +42,7 @@ assert.deepEqual(schema[4].results.map(row => [row.id, row.name, row.sortOrder])
   ['event-turnir-2', 'The International 141', 6],
 ]);
 assert.equal(schema[4].results[1]?.imageUrl, '/assets/nominees/event/chgk-2.png');
-assert.deepEqual(schema[5].results.map(row => row.name), ['Вчера моя мне возразить решила...', 'Веселая ферма', 'Выбирай одну шмотку', 'Настучал', 'Бесконечная битва', 'Добрый стример', 'Записки психиатра']);
+assert.deepEqual(schema[5].results.map(row => row.name), ['Вчера моя мне возразить решила...', 'Веселая ферма', 'Выбирай одну шмотку', 'Настучал', 'Бесконечная битва', 'Добрый стример', 'Записки психиатра', 'Судьба керри в 2026']);
 assert.deepEqual(schema[6].results.map(row => row.name), ['Золотые купола', 'Победный вейв', 'В себя поверил?', 'АААААРБУУУУУУЗ', '1000 игр на лансере', 'Опа', 'Отвлекся', 'Прикинь я проиграл...']);
 assert.deepEqual(schema[7].results.map(row => row.name), ['Ангельский голос', 'Как я эту игру зае*алась играть', 'Интересный донат', 'Ему нравится', 'Найс тайминг', 'Самарские авиалинии', 'Без посадки авто нет']);
 

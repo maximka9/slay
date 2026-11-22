@@ -27,7 +27,7 @@ export type AwardsConfig = {
 
 const mediaBase = (import.meta.env?.VITE_MEDIA_BASE_URL ?? '').replace(/\/$/, '');
 const video = (src: string, label: string): VideoAsset => ({ src: mediaBase ? `${mediaBase}${src}` : src, label });
-const dotaClipNames = ['Вчера моя мне возразить решила...', 'Веселая ферма', 'Выбирай одну шмотку', 'Настучал', 'Бесконечная битва', 'Добрый стример', 'Записки психиатра'];
+const dotaClipNames = ['Вчера моя мне возразить решила...', 'Веселая ферма', 'Выбирай одну шмотку', 'Настучал', 'Бесконечная битва', 'Добрый стример', 'Записки психиатра', 'Судьба керри в 2026'];
 const failClipNames = ['Золотые купола', 'Победный вейв', 'В себя поверил?', 'АААААРБУУУУУУЗ', '1000 игр на лансере', 'Опа', 'Отвлекся', 'Прикинь я проиграл...'];
 const communityClipNames = ['Ангельский голос', 'Как я эту игру зае*алась играть', 'Интересный донат', 'Ему нравится', 'Найс тайминг', 'Самарские авиалинии', 'Без посадки авто нет'];
 const categoryOrder = ['indie-game', 'game', 'event', 'dota-clip', 'fail', 'community-drop', 'irl', 'chatter', 'custom-award'];
@@ -123,7 +123,7 @@ export const awards: AwardsConfig = {
     {
       id: 'dota-clip', title: 'DOTA 2 — Клип года', icon: 'play', kind: 'clip',
       intro: 'Куда же без DOTA 2 - 70% стримов проводились в этой игре',
-      nominees: Array.from({ length: 7 }, (_, i) => ({
+      nominees: Array.from({ length: dotaClipNames.length }, (_, i) => ({
         id: `dota-clip-${i + 1}`, name: dotaClipNames[i],
         media: { src: `/assets/generated-previews/dota-clip/dota-clip-${String(i + 1).padStart(2, '0')}.jpg`, alt: `Кадр из клипа «${dotaClipNames[i]}»` },
         videos: [video(`/assets/nominees/dota-clip/videos/dota-clip-${String(i + 1).padStart(2, '0')}.mp4`, dotaClipNames[i])],

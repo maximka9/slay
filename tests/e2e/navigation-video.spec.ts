@@ -90,3 +90,11 @@ test('видеоплеер остаётся в центре viewport и восс
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollBefore);
   await expect(watch).toBeFocused();
 });
+
+test('плитка номинации на главной ведёт к голосованию за неё', async ({ page }) => {
+  await mockPublicApi(page);
+  await page.goto('/');
+  await page.locator('a.category-tile.category-game').click();
+  await expect(page).toHaveURL(/\/vote#vote-game$/);
+  await expect(page.locator('#vote-game')).toBeInViewport();
+});

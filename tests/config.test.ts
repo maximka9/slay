@@ -17,7 +17,7 @@ describe('Сценарий и конфигурация', () => {
     expect(awards.categories[2].nominees.map(n => n.name)).toContain('The International 141');
     expect(awards.categories[2].nominees.map(n => n.name)).toContain('Чудо-полес');
     expect(awards.categories[3]).toMatchObject({ title: 'DOTA 2 — Клип года', intro: 'Куда же без DOTA 2 - 70% стримов проводились в этой игре' });
-    expect(awards.categories[3].nominees.map(n => n.name)).toEqual(['Вчера моя мне возразить решила...', 'Веселая ферма', 'Выбирай одну шмотку', 'Настучал', 'Бесконечная битва', 'Добрый стример', 'Записки психиатра']);
+    expect(awards.categories[3].nominees.map(n => n.name)).toEqual(['Вчера моя мне возразить решила...', 'Веселая ферма', 'Выбирай одну шмотку', 'Настучал', 'Бесконечная битва', 'Добрый стример', 'Записки психиатра', 'Судьба керри в 2026']);
     expect(awards.categories[4]).toMatchObject({ title: 'Фейл года', intro: 'Классика - тп на т3, не попал по кнопке, носки не так надел.' });
     expect(awards.categories[4].nominees.map(n => n.name)).toEqual(['Золотые купола', 'Победный вейв', 'В себя поверил?', 'АААААРБУУУУУУЗ', '1000 игр на лансере', 'Опа', 'Отвлекся', 'Прикинь я проиграл...']);
     expect(awards.categories[5].nominees).toHaveLength(7);
@@ -25,9 +25,9 @@ describe('Сценарий и конфигурация', () => {
     expect(awards.categories[6]).toMatchObject({ title: 'IRL года', intro: 'Ваши любимые алкостримы и кукинги' });
     expect(awards.categories[6].nominees.map(n => n.name)).toEqual(['Монстры на каникулах в Москве', 'Монстры на каникулах — часть 2', 'Чат-рулетка', 'Говядина Веллингтон', 'Готовим пиццу', 'Московский алкокукинг']);
     expect(awards.categories.some(category => category.id === 'meme')).toBe(false);
-    expect(awards.categories.flatMap(c => c.nominees.flatMap(n => n.videos ?? []))).toHaveLength(60);
-    expect(awards.categories.flatMap(c => c.nominees.flatMap(n => n.media ? [n.media] : []))).toHaveLength(52);
-    expect(new Set(awards.categories.flatMap(c => c.nominees.flatMap(n => n.videos?.map(item => item.src) ?? []))).size).toBe(60);
+    expect(awards.categories.flatMap(c => c.nominees.flatMap(n => n.videos ?? []))).toHaveLength(61);
+    expect(awards.categories.flatMap(c => c.nominees.flatMap(n => n.media ? [n.media] : []))).toHaveLength(53);
+    expect(new Set(awards.categories.flatMap(c => c.nominees.flatMap(n => n.videos?.map(item => item.src) ?? []))).size).toBe(61);
     expect(awards.categories.find(category => category.id === 'event')?.nominees.map(item => [item.id, item.name, item.videos?.length ?? 0])).toEqual([
       ['event-chgk', 'Что? Где? Когда? №1', 1],
       ['event-chgk-2', 'Что? Где? Когда? №2', 0],

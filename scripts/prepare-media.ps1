@@ -118,7 +118,8 @@ $dotaSources = @(
   '20261011_NimbleQuaintHerdTBTacoLeft-vg_Aj-WCo4SJuiHy_source.mp4',
   '20261013_ZealousSavoryPhoneOSfrog-GFpOBkPOMDhRLmYU_source.mp4',
   'рейдж 1.mp4',
-  'рейдж 2.mp4'
+  'рейдж 2.mp4',
+  'рейдж 3.mp4'
 )
 $failSources = @(
   '20251005_ProtectiveFaithfulSproutKeepo-Md_dlI-P1KDiCnv7_source.mp4',

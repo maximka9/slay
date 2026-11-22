@@ -1,7 +1,7 @@
 import { ApiError, type ApiContext, type Env } from '../_lib/types';
 import { apiError, body, cookie, cookies, integer, json, redirect } from '../_lib/http';
 import { OAUTH_COOKIE, SESSION_COOKIE, SESSION_SECONDS, getSession, now, randomToken, rateLimit, requireAdmin, requireCsrf, requireUser, secretHash } from '../_lib/security';
-import { authorizeUrl, exchangeCode, resolveTwitchLogin } from '../_lib/twitch';
+import { authorizeUrl, exchangeCode, resolveTwitchLogin, type TwitchUser } from '../_lib/twitch';
 import { publicNominations, setSetting, setting } from '../_lib/data';
 import { votingAvailability } from '../_lib/availability';
 import { CUSTOM_AWARD_ID, canExposePublicResults, publicationPlan } from '../_lib/publication';
@@ -52,6 +52,7 @@ async function route(context: ApiContext): Promise<Response> {
     if (method === 'POST' && path === '/api/admin/candidates') return createCandidate(request, env);
     if (method === 'PATCH' && path.startsWith('/api/admin/candidates/')) return updateCandidate(request, env, decodeURIComponent(path.slice('/api/admin/candidates/'.length)));
     if (method === 'POST' && path === '/api/admin/voting/status') return updateVotingStatus(request, env);
+    if (method === 'POST' && path === '/api/admin/settings/chatter-free-input') return updateChatterFreeInput(request, env);
     if (method === 'POST' && path === '/api/admin/results/finalize') return finalizeResults(request, env);
     if (method === 'POST' && path === '/api/admin/results/resolve-tie') return resolveTie(request, env);
     if (method === 'POST' && path === '/api/admin/results/no-winner') return markNoWinner(request, env);
@@ -185,6 +186,50 @@ async function saveCustomAward(request: Request, env: Env) {
   return json({ ok: true, unchanged: false, proposal: { awardTitle, recipient } });
 }
 
+// Находит или создаёт кандидата «Чаттера» по Twitch-профилю.
+// Без гонки: sort_order считается внутри INSERT, конфликт обрабатывается повтором.
+async function ensureChatterCandidate(env: Env, twitch: TwitchUser): Promise<string> {
+  const findByTwitchId = () => env.DB
+    .prepare("SELECT id, enabled FROM candidates WHERE nomination_id = 'chatter' AND twitch_user_id = ?")
+    .bind(twitch.id)
+    .first<{ id: string; enabled: number }>();
+
+  const existing = await findByTwitchId();
+  if (existing) {
+    if (existing.enabled !== 1) throw new ApiError(409, 'Этот кандидат скрыт модератором.', 'candidate_hidden');
+    await env.DB
+      .prepare('UPDATE candidates SET name = ?, image_url = ?, twitch_login = ? WHERE id = ?')
+      .bind(twitch.display_name, twitch.profile_image_url, twitch.login, existing.id)
+      .run();
+    return existing.id;
+  }
+
+  // Если этот ник раньше принадлежал другому Twitch-аккаунту (смена ника) — освобождаем его,
+  // иначе сработает UNIQUE(nomination_id, twitch_login).
+  await env.DB
+    .prepare("UPDATE candidates SET twitch_login = NULL WHERE nomination_id = 'chatter' AND twitch_login = ? AND twitch_user_id <> ?")
+    .bind(twitch.login, twitch.id)
+    .run();
+
+  const id = `chatter-${twitch.id}`;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await env.DB.prepare(`
+        INSERT INTO candidates (id, nomination_id, name, image_url, twitch_user_id, twitch_login, enabled, sort_order)
+        SELECT ?, 'chatter', ?, ?, ?, ?, 1, COALESCE(MAX(sort_order), 0) + 1
+        FROM candidates WHERE nomination_id = 'chatter'
+      `).bind(id, twitch.display_name, twitch.profile_image_url, twitch.id, twitch.login).run();
+      return id;
+    } catch {
+      // Кто-то одновременно добавил этого же человека или занял sort_order.
+      const raced = await findByTwitchId();
+      if (raced) return raced.id;
+      if (attempt === 3) throw new ApiError(409, 'Не удалось добавить кандидата, попробуйте ещё раз.', 'candidate_conflict');
+    }
+  }
+  return id;
+}
+
 async function castVote(request: Request, env: Env, nominationId: string) {
   const user = await requireUser(request, env);
   requireCsrf(request, user);
@@ -206,13 +251,8 @@ async function castVote(request: Request, env: Env, nominationId: string) {
   let candidateId = payload.candidateId?.trim() ?? '';
   if (!candidateId && nominationId === 'chatter' && payload.twitchLogin && chatterFreeInput) {
     const twitch = await resolveTwitchLogin(payload.twitchLogin, env);
-    candidateId = `chatter-${twitch.id}`;
-    const order = (await env.DB.prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 AS nextOrder FROM candidates WHERE nomination_id = 'chatter'").first<{ nextOrder: number }>())?.nextOrder ?? 1;
-    await env.DB.prepare(`
-      INSERT INTO candidates (id, nomination_id, name, image_url, twitch_user_id, twitch_login, enabled, sort_order)
-      VALUES (?, 'chatter', ?, ?, ?, ?, 1, ?)
-      ON CONFLICT(nomination_id, twitch_user_id) DO UPDATE SET name = excluded.name, image_url = excluded.image_url, twitch_login = excluded.twitch_login
-    `).bind(candidateId, twitch.display_name, twitch.profile_image_url, twitch.id, twitch.login, order).run();
+    if (twitch.id === user.twitchUserId) throw new ApiError(400, 'Нельзя голосовать за себя.', 'self_vote_forbidden');
+    candidateId = await ensureChatterCandidate(env, twitch);
   }
   if (!candidateId) throw new ApiError(400, 'Выберите номинанта.', 'candidate_required');
   const timestamp = now();
@@ -243,10 +283,18 @@ async function adminOverview(request: Request, env: Env) {
       SUM(CASE WHEN v.status = 'valid' THEN 1 ELSE 0 END) AS validVotes
       FROM nominations n LEFT JOIN votes v ON v.nomination_id = n.id WHERE n.enabled = 1 GROUP BY n.id ORDER BY n.sort_order`).all(),
     env.DB.prepare('SELECT MAX(updated_at) AS lastVoteAt FROM votes').first(),
-    env.DB.prepare("SELECT key, value FROM settings WHERE key = 'voting_status'").all<{ key: string; value: string }>(),
-    env.DB.prepare("SELECT COUNT(DISTINCT twitch_user_id) AS recentUsers FROM votes WHERE updated_at >= datetime('now', '-1 day')").first(),
+    env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('voting_status', 'chatter_free_input')").all<{ key: string; value: string }>(),
+    env.DB.prepare("SELECT COUNT(DISTINCT twitch_user_id) AS recentUsers FROM votes WHERE updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 day')").first(),
   ]);
   return json({ counts, nominations: nominations.results, lastVote, recent, settings: Object.fromEntries(settings.results.map(row => [row.key, row.value])) });
+}
+
+// D1: шаблон LIKE не длиннее 50 байт. Кириллица = 2 байта на символ.
+function likePattern(raw: string) {
+  let value = raw.trim();
+  while (new TextEncoder().encode(value).length > 46) value = value.slice(0, -1);
+  const escaped = value.replace(/[\\%_]/g, char => `\\${char}`);
+  return `%${escaped}%`;
 }
 
 async function adminVotes(request: Request, env: Env, url: URL) {
@@ -254,12 +302,12 @@ async function adminVotes(request: Request, env: Env, url: URL) {
   const clauses: string[] = [];
   const bindings: unknown[] = [];
   const search = url.searchParams.get('search')?.trim();
-  if (search) { clauses.push('(u.login LIKE ? OR u.display_name LIKE ? OR u.twitch_user_id = ?)'); bindings.push(`%${search}%`, `%${search}%`, search); }
+  if (search) { const pattern = likePattern(search); clauses.push("(u.login LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\' OR u.twitch_user_id = ?)"); bindings.push(pattern, pattern, search); }
   const status = url.searchParams.get('status');
   if (status === 'valid' || status === 'excluded') { clauses.push('v.status = ?'); bindings.push(status); }
   const nomination = url.searchParams.get('nomination');
   if (nomination) { clauses.push('v.nomination_id = ?'); bindings.push(nomination); }
-  if (url.searchParams.get('newAccounts') === '1') clauses.push("u.twitch_created_at >= datetime('now', '-90 day')");
+  if (url.searchParams.get('newAccounts') === '1') clauses.push("u.twitch_created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-90 day')");
   const sort = url.searchParams.get('sort') === 'account' ? 'u.twitch_created_at DESC' : url.searchParams.get('sort') === 'first' ? 'u.first_seen_at DESC' : 'v.updated_at DESC';
   const limit = integer(url.searchParams.get('limit'), 100, 1, 200);
   const page = integer(url.searchParams.get('page'), 1, 1, 100_000);
@@ -371,7 +419,7 @@ async function moderateVote(request: Request, env: Env, voteId: number, action: 
   const status = action === 'exclude' ? 'excluded' : 'valid';
   const timestamp = now();
   await env.DB.batch([
-    env.DB.prepare('UPDATE votes SET status = ?, exclusion_reason = ?, exclusion_comment = ?, updated_at = ? WHERE id = ?').bind(status, action === 'exclude' ? payload.reason || 'Другая причина' : null, action === 'exclude' ? payload.comment || null : null, timestamp, voteId),
+    env.DB.prepare('UPDATE votes SET status = ?, exclusion_reason = ?, exclusion_comment = ?, moderated_at = ? WHERE id = ?').bind(status, action === 'exclude' ? payload.reason || 'Другая причина' : null, action === 'exclude' ? payload.comment || null : null, timestamp, voteId),
     env.DB.prepare('INSERT INTO moderation_actions (target_user_id, target_vote_id, action, reason, comment, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(vote.twitch_user_id, voteId, action, payload.reason || null, payload.comment || null, timestamp, admin.twitchUserId),
     setSetting(env, 'results_dirty', '1', timestamp),
   ]);
@@ -386,7 +434,7 @@ async function moderateUser(request: Request, env: Env, twitchUserId: string, ac
   const status = action === 'exclude' ? 'excluded' : 'valid';
   const timestamp = now();
   await env.DB.batch([
-    env.DB.prepare('UPDATE votes SET status = ?, exclusion_reason = ?, exclusion_comment = ?, updated_at = ? WHERE twitch_user_id = ?').bind(status, action === 'exclude' ? payload.reason || 'Другая причина' : null, action === 'exclude' ? payload.comment || null : null, timestamp, twitchUserId),
+    env.DB.prepare('UPDATE votes SET status = ?, exclusion_reason = ?, exclusion_comment = ?, moderated_at = ? WHERE twitch_user_id = ?').bind(status, action === 'exclude' ? payload.reason || 'Другая причина' : null, action === 'exclude' ? payload.comment || null : null, timestamp, twitchUserId),
     env.DB.prepare('INSERT INTO moderation_actions (target_user_id, action, reason, comment, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?, ?, ?)').bind(twitchUserId, `${action}_all`, payload.reason || null, payload.comment || null, timestamp, admin.twitchUserId),
     setSetting(env, 'results_dirty', '1', timestamp),
   ]);
@@ -412,6 +460,21 @@ async function updateVotingStatus(request: Request, env: Env) {
   statements.push(env.DB.prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)').bind(`voting_${payload.status}`, JSON.stringify({ ...payload, previousStatus, startsPrivateCycle }), timestamp, admin.twitchUserId));
   await env.DB.batch(statements);
   return json({ ok: true, status: payload.status });
+}
+
+async function updateChatterFreeInput(request: Request, env: Env) {
+  const admin = await requireAdmin(request, env);
+  requireCsrf(request, admin);
+  const payload = await body<{ enabled?: unknown }>(request);
+  if (typeof payload.enabled !== 'boolean') throw new ApiError(400, 'Передайте enabled: true или false.', 'invalid_payload');
+  const timestamp = now();
+  await env.DB.batch([
+    setSetting(env, 'chatter_free_input', payload.enabled ? '1' : '0', timestamp),
+    env.DB
+      .prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)')
+      .bind(payload.enabled ? 'chatter_free_input_on' : 'chatter_free_input_off', JSON.stringify({ enabled: payload.enabled }), timestamp, admin.twitchUserId),
+  ]);
+  return json({ ok: true, enabled: payload.enabled });
 }
 
 async function updateNomination(request: Request, env: Env, id: string) {
