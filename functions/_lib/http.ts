@@ -33,7 +33,7 @@ export async function body<T>(request: Request): Promise<T> {
 }
 
 // Чистые функции (без типов Cloudflare) лежат в url.ts — их проверяют юнит-тесты.
-export { safeDecode, safeReturnTo } from './url';
+export { integer, safeDecode, safeReturnTo } from './url';
 
 export function cookies(request: Request) {
   return parseCookieHeader(request.headers.get('cookie'));
@@ -50,7 +50,3 @@ export function apiError(error: unknown) {
   return json({ error: 'internal_error', message: 'Внутренняя ошибка сервера.' }, 500);
 }
 
-export function integer(value: string | null, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
-}

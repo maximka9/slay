@@ -531,6 +531,9 @@ async function updateVotingStatus(request: Request, env: Env) {
     statements.push(setSetting(env, 'publication_cycle', String(Number.isFinite(currentCycle) ? currentCycle + 1 : 1), timestamp));
     statements.push(setSetting(env, 'custom_award_published', '0', timestamp));
   }
+  // Повторное открытие голосования делает прежний снимок итогов неактуальным,
+  // даже если новых голосов ещё не было: после закрытия его нужно зафиксировать заново.
+  if (payload.status === 'open' && previousStatus !== 'open') statements.push(setSetting(env, 'results_dirty', '1', timestamp));
   statements.push(env.DB.prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)').bind(`voting_${payload.status}`, JSON.stringify({ ...payload, previousStatus, startsPrivateCycle }), timestamp, admin.twitchUserId));
   await env.DB.batch(statements);
   return json({ ok: true, status: payload.status });

@@ -696,10 +696,11 @@ export function Admin() {
                 <div>
                   <b>{nomination.title}</b>
                   <span>
-                    {overview.nominations.find(
-                      (item) => item.id === nomination.id,
-                    )?.validVotes ?? 0}{' '}
-                    голосов
+                    {votesLabel(
+                      overview.nominations.find(
+                        (item) => item.id === nomination.id,
+                      )?.validVotes ?? 0,
+                    )}
                   </span>
                 </div>
                 <span className={nomination.canVote ? 'ready' : ''}>
@@ -1125,7 +1126,12 @@ export function Admin() {
             </div>
             <div className="admin-actions">
               <button
-                disabled={busy !== ''}
+                disabled={busy !== '' || votingStatus !== 'closed'}
+                title={
+                  votingStatus !== 'closed'
+                    ? 'Сначала закройте голосование'
+                    : undefined
+                }
                 onClick={async () => {
                   if (
                     await dialog.confirm(
@@ -1151,7 +1157,19 @@ export function Admin() {
               </button>
               <button
                 className="primary"
-                disabled={busy !== ''}
+                disabled={
+                  busy !== '' ||
+                  votingStatus !== 'closed' ||
+                  !results?.snapshot ||
+                  results.dirty
+                }
+                title={
+                  votingStatus !== 'closed'
+                    ? 'Сначала закройте голосование'
+                    : !results?.snapshot || results?.dirty
+                      ? 'Сначала зафиксируйте актуальные результаты'
+                      : undefined
+                }
                 onClick={async () => {
                   if (
                     await dialog.confirm(
@@ -1520,7 +1538,15 @@ export function Admin() {
                       Учтённых голосов пока нет — лидер не определяется.
                     </p>
                   ) : (
-                    visible.map((entry, index) => {
+                    visible.map((entry) => {
+                      // Плотный ранг, как в зафиксированном снимке: равные голоса → одно место.
+                      const rank =
+                        1 +
+                        new Set(
+                          entries
+                            .filter((other) => other.voteCount > entry.voteCount)
+                            .map((other) => other.voteCount),
+                        ).size;
                       const tied =
                         entry.voteCount > 0 &&
                         entries.some(
@@ -1534,7 +1560,7 @@ export function Admin() {
                           key={entry.candidateId}
                         >
                           <span>
-                            <b className="result-rank">{index + 1}.</b>{' '}
+                            <b className="result-rank">{rank}.</b>{' '}
                             {entry.candidateName}
                             {tied ? ' · РАВЕНСТВО' : ''}
                           </span>

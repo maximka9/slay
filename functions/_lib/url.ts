@@ -30,3 +30,11 @@ export function safeReturnTo(value: string | null | undefined): string {
   if (!RETURN_PATHS.includes(parsed.pathname)) return fallback;
   return parsed.pathname + parsed.search + parsed.hash;
 }
+
+// Целое из query-параметра. Отсутствующий или пустой параметр → значение по умолчанию
+// (раньше Number(null) === 0 обрезался до минимума, и список голосов отдавался по 1 записи).
+export function integer(value: string | null | undefined, fallback: number, min: number, max: number) {
+  if (value === null || value === undefined || value.trim() === '') return fallback;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+}

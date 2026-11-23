@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCookieHeader, safeDecode, safeReturnTo } from '../../functions/_lib/url';
+import { integer, parseCookieHeader, safeDecode, safeReturnTo } from '../../functions/_lib/url';
 
 describe('safeReturnTo', () => {
   it.each([
@@ -36,5 +36,20 @@ describe('safeDecode', () => {
   it('возвращает null для битого процента', () => {
     expect(safeDecode('%E0')).toBeNull();
     expect(safeDecode('game%2D1')).toBe('game-1');
+  });
+});
+
+describe('integer', () => {
+  it('отсутствующий параметр даёт значение по умолчанию, а не минимум', () => {
+    expect(integer(null, 100, 1, 200)).toBe(100);
+    expect(integer('', 25, 1, 50)).toBe(25);
+    expect(integer('  ', 25, 1, 50)).toBe(25);
+  });
+  it('ограничивает диапазон и отбрасывает мусор', () => {
+    expect(integer('0', 100, 1, 200)).toBe(1);
+    expect(integer('999', 100, 1, 200)).toBe(200);
+    expect(integer('7', 100, 1, 200)).toBe(7);
+    expect(integer('abc', 100, 1, 200)).toBe(100);
+    expect(integer('1.5', 100, 1, 200)).toBe(100);
   });
 });
