@@ -3,6 +3,7 @@ import { ArrowUpRight, LogIn } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Brand } from './Brand';
 import { useAuth } from './AuthProvider';
+import { AuthNotice } from './AuthNotice';
 export function Layout({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const location = useLocation();
@@ -42,5 +43,5 @@ export function Layout({ children }: { children: ReactNode }) {
     return () => window.cancelAnimationFrame(timer);
   }, [location.hash, location.pathname]);
   const navLink = (id: string, to: string, label: string) => <Link to={to} className={activeItem === id ? 'active' : ''} data-nav-active={activeItem === id} aria-current={activeItem === id ? 'page' : undefined}>{label}</Link>;
-  return <div className="site-shell"><header className="site-header"><Brand /><nav ref={navRef} aria-label="Основная навигация">{navLink('home', '/', 'Главная')}{navLink('nominations', '/#nominations', 'Номинации')}{navLink('vote', '/vote', 'Голосование')}{navLink('results', '/results', 'Итоги')}{auth.isAdmin && navLink('admin', '/admin', 'Админ')}<span className={`nav-indicator ${indicator.ready ? 'ready' : ''}`} style={{ '--nav-x': `${indicator.x}px`, '--nav-width': `${indicator.width}px` } as CSSProperties} aria-hidden="true" /></nav>{auth.authenticated && auth.user ? <Link className="header-profile" to={auth.isAdmin ? '/admin' : '/vote'}><img src={auth.user.avatarUrl} alt="" /><span>{auth.user.displayName}</span></Link> : <a className="channel-link" href={auth.loginUrl('/vote')}><LogIn size={16} /> ВОЙТИ ЧЕРЕЗ TWITCH</a>}</header>{children}<footer className="site-footer"><Brand /><span>ЭТОТ ГОД МЫ СОЗДАЛИ ВМЕСТЕ.</span><Link to="/privacy">Данные и конфиденциальность <ArrowUpRight size={15} /></Link></footer></div>;
+  return <div className="site-shell"><header className="site-header"><Brand /><nav ref={navRef} aria-label="Основная навигация">{navLink('home', '/', 'Главная')}{navLink('nominations', '/#nominations', 'Номинации')}{navLink('vote', '/vote', 'Голосование')}{navLink('results', '/results', 'Итоги')}{auth.isAdmin && navLink('admin', '/admin', 'Админ')}<span className={`nav-indicator ${indicator.ready ? 'ready' : ''}`} style={{ '--nav-x': `${indicator.x}px`, '--nav-width': `${indicator.width}px` } as CSSProperties} aria-hidden="true" /></nav>{auth.authenticated && auth.user ? <Link className="header-profile" to={auth.isAdmin ? '/admin' : '/vote'}><img src={auth.user.avatarUrl} alt="" /><span>{auth.user.displayName}</span></Link> : <a className="channel-link" href={auth.loginUrl('/vote')}><LogIn size={16} /> ВОЙТИ ЧЕРЕЗ TWITCH</a>}</header><AuthNotice />{children}<footer className="site-footer"><Brand /><span>ЭТОТ ГОД МЫ СОЗДАЛИ ВМЕСТЕ.</span><Link to="/privacy">Данные и конфиденциальность <ArrowUpRight size={15} /></Link></footer></div>;
 }

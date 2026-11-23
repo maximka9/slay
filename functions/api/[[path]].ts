@@ -1,5 +1,5 @@
 import { ApiError, type ApiContext, type Env } from '../_lib/types';
-import { apiError, body, cookie, cookies, integer, json, redirect } from '../_lib/http';
+import { apiError, body, cookie, cookies, integer, json, redirect, safeDecode, safeReturnTo } from '../_lib/http';
 import { OAUTH_COOKIE, SESSION_COOKIE, SESSION_SECONDS, getSession, now, randomToken, rateLimit, requireAdmin, requireCsrf, requireUser, secretHash } from '../_lib/security';
 import { authorizeUrl, exchangeCode, resolveTwitchLogin, type TwitchUser } from '../_lib/twitch';
 import { publicNominations, setSetting, setting } from '../_lib/data';
@@ -8,9 +8,21 @@ import { CUSTOM_AWARD_ID, canExposePublicResults, publicationPlan } from '../_li
 
 type JsonObject = Record<string, unknown>;
 
+// «Чаттер года»: сколько раз один зритель может вписать ник (первый голос + изменения).
+const CHATTER_MAX_ENTRIES = 2;
+// «Чаттер года»: сколько строк рейтинга показывать публично.
+const CHATTER_PUBLIC_LIMIT = 10;
+
 async function oauthActorHash(request: Request, env: Env) {
   const networkSignal = request.headers.get('CF-Connecting-IP') ?? request.headers.get('x-forwarded-for') ?? 'local';
   return secretHash(`oauth:${networkSignal}`, env.SESSION_SECRET);
+}
+
+// Параметр из адреса (`/api/votes/<id>`). Битый `%` → 400, а не 500.
+function param(value: string) {
+  const decoded = safeDecode(value);
+  if (decoded === null) throw new ApiError(400, 'Некорректный адрес запроса.', 'invalid_path');
+  return decoded;
 }
 
 export const onRequest: PagesFunction<Env> = async context => {
@@ -33,7 +45,7 @@ async function route(context: ApiContext): Promise<Response> {
   if (method === 'GET' && path === '/api/my-votes') return myVotes(request, env);
   if (method === 'GET' && path === '/api/my-custom-award') return myCustomAward(request, env);
   if (method === 'PUT' && path === '/api/custom-award') return saveCustomAward(request, env);
-  if (method === 'PUT' && path.startsWith('/api/votes/')) return castVote(request, env, decodeURIComponent(path.slice('/api/votes/'.length)));
+  if (method === 'PUT' && path.startsWith('/api/votes/')) return castVote(request, env, param(path.slice('/api/votes/'.length)));
   if (method === 'GET' && path === '/api/results') return publicResults(env);
 
   if (path.startsWith('/api/admin/')) {
@@ -47,12 +59,11 @@ async function route(context: ApiContext): Promise<Response> {
     if (method === 'GET' && path === '/api/admin/custom-awards') return adminCustomAwards(request, env, url);
     if (method === 'POST' && path === '/api/admin/custom-awards/select') return selectCustomAward(request, env);
     const customAwardAction = path.match(/^\/api\/admin\/custom-awards\/([^/]+)$/);
-    if (method === 'PATCH' && customAwardAction) return moderateCustomAward(request, env, decodeURIComponent(customAwardAction[1]));
-    if (method === 'PATCH' && path.startsWith('/api/admin/nominations/')) return updateNomination(request, env, decodeURIComponent(path.slice('/api/admin/nominations/'.length)));
+    if (method === 'PATCH' && customAwardAction) return moderateCustomAward(request, env, param(customAwardAction[1]));
+    if (method === 'PATCH' && path.startsWith('/api/admin/nominations/')) return updateNomination(request, env, param(path.slice('/api/admin/nominations/'.length)));
     if (method === 'POST' && path === '/api/admin/candidates') return createCandidate(request, env);
-    if (method === 'PATCH' && path.startsWith('/api/admin/candidates/')) return updateCandidate(request, env, decodeURIComponent(path.slice('/api/admin/candidates/'.length)));
+    if (method === 'PATCH' && path.startsWith('/api/admin/candidates/')) return updateCandidate(request, env, param(path.slice('/api/admin/candidates/'.length)));
     if (method === 'POST' && path === '/api/admin/voting/status') return updateVotingStatus(request, env);
-    if (method === 'POST' && path === '/api/admin/settings/chatter-free-input') return updateChatterFreeInput(request, env);
     if (method === 'POST' && path === '/api/admin/results/finalize') return finalizeResults(request, env);
     if (method === 'POST' && path === '/api/admin/results/resolve-tie') return resolveTie(request, env);
     if (method === 'POST' && path === '/api/admin/results/no-winner') return markNoWinner(request, env);
@@ -60,18 +71,18 @@ async function route(context: ApiContext): Promise<Response> {
     const voteAction = path.match(/^\/api\/admin\/votes\/(\d+)\/(exclude|restore)$/);
     if (method === 'POST' && voteAction) return moderateVote(request, env, Number(voteAction[1]), voteAction[2] as 'exclude' | 'restore');
     const userAction = path.match(/^\/api\/admin\/users\/([^/]+)\/(exclude|restore)$/);
-    if (method === 'POST' && userAction) return moderateUser(request, env, decodeURIComponent(userAction[1]), userAction[2] as 'exclude' | 'restore');
+    if (method === 'POST' && userAction) return moderateUser(request, env, param(userAction[1]), userAction[2] as 'exclude' | 'restore');
   }
 
   throw new ApiError(404, 'API-маршрут не найден.', 'not_found');
 }
 
 async function login(request: Request, env: Env, url: URL) {
-  await rateLimit(env, await oauthActorHash(request, env), 'oauth_login', 10);
+  // 60 в минуту: у мобильных операторов (CGNAT) сотни зрителей выходят с одного IP.
+  await rateLimit(env, await oauthActorHash(request, env), 'oauth_login', 60);
   const state = randomToken();
   const stateHash = await secretHash(state, env.SESSION_SECRET);
-  const returnToValue = url.searchParams.get('returnTo') || '/vote';
-  const returnTo = returnToValue.startsWith('/') && !returnToValue.startsWith('//') ? returnToValue : '/vote';
+  const returnTo = safeReturnTo(url.searchParams.get('returnTo'));
   const timestamp = now();
   const expires = new Date(Date.now() + 10 * 60_000).toISOString();
   await env.DB.batch([
@@ -81,8 +92,26 @@ async function login(request: Request, env: Env, url: URL) {
   return redirect(authorizeUrl(state, env), { 'Set-Cookie': cookie(OAUTH_COOKIE, state, request, 600) });
 }
 
+// Любая ошибка входа возвращает зрителя на сайт с понятным сообщением, а не показывает сырой JSON.
 async function callback(request: Request, env: Env, url: URL) {
-  await rateLimit(env, await oauthActorHash(request, env), 'oauth_callback', 20);
+  try {
+    return await callbackInner(request, env, url);
+  } catch (error) {
+    const code = error instanceof ApiError ? error.code : 'internal_error';
+    if (!(error instanceof ApiError)) console.error(error);
+    return redirect(`/vote?auth=error&reason=${encodeURIComponent(code)}`, { 'Set-Cookie': cookie(OAUTH_COOKIE, '', request, 0) });
+  }
+}
+
+function withAuthStatus(path: string, status: 'ok' | 'cancelled') {
+  const hashIndex = path.indexOf('#');
+  const base = hashIndex < 0 ? path : path.slice(0, hashIndex);
+  const hash = hashIndex < 0 ? '' : path.slice(hashIndex);
+  return `${base}${base.includes('?') ? '&' : '?'}auth=${status}${hash}`;
+}
+
+async function callbackInner(request: Request, env: Env, url: URL) {
+  await rateLimit(env, await oauthActorHash(request, env), 'oauth_callback', 60);
   const state = url.searchParams.get('state') ?? '';
   const expected = cookies(request)[OAUTH_COOKIE] ?? '';
   if (!state || !expected || state !== expected) throw new ApiError(400, 'OAuth state не совпал.', 'oauth_state_failed');
@@ -90,7 +119,8 @@ async function callback(request: Request, env: Env, url: URL) {
   const stateRow = await env.DB.prepare('SELECT return_to, expires_at FROM oauth_states WHERE state_hash = ?').bind(stateHash).first<{ return_to: string; expires_at: string }>();
   await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash = ?').bind(stateHash).run();
   if (!stateRow || stateRow.expires_at <= now()) throw new ApiError(400, 'OAuth state истёк или уже использован.', 'oauth_state_expired');
-  if (url.searchParams.get('error')) return redirect(`${stateRow.return_to}?auth=cancelled`, { 'Set-Cookie': cookie(OAUTH_COOKIE, '', request, 0) });
+  const returnTo = safeReturnTo(stateRow.return_to);
+  if (url.searchParams.get('error')) return redirect(withAuthStatus(returnTo, 'cancelled'), { 'Set-Cookie': cookie(OAUTH_COOKIE, '', request, 0) });
   const code = url.searchParams.get('code');
   if (!code) throw new ApiError(400, 'Twitch не вернул код авторизации.', 'oauth_code_missing');
   const twitch = await exchangeCode(code, env);
@@ -105,9 +135,13 @@ async function callback(request: Request, env: Env, url: URL) {
   const sessionHash = await secretHash(session, env.SESSION_SECRET);
   const csrf = randomToken(24);
   const expires = new Date(Date.now() + SESSION_SECONDS * 1000).toISOString();
-  await env.DB.prepare('INSERT INTO sessions (id_hash, twitch_user_id, csrf_token, created_at, last_seen_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(sessionHash, twitch.id, csrf, timestamp, timestamp, expires).run();
-  return redirect(`${stateRow.return_to}${stateRow.return_to.includes('?') ? '&' : '?'}auth=ok`, {}, [
+  // Заодно чистим просроченные сессии, чтобы таблица не росла бесконечно.
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(timestamp),
+    env.DB.prepare('INSERT INTO sessions (id_hash, twitch_user_id, csrf_token, created_at, last_seen_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(sessionHash, twitch.id, csrf, timestamp, timestamp, expires),
+  ]);
+  return redirect(withAuthStatus(returnTo, 'ok'), {}, [
     cookie(SESSION_COOKIE, session, request, SESSION_SECONDS), cookie(OAUTH_COOKIE, '', request, 0),
   ]);
 }
@@ -132,7 +166,8 @@ async function myVotes(request: Request, env: Env) {
   const user = await requireUser(request, env);
   const result = await env.DB.prepare(`
     SELECT v.nomination_id AS nominationId, v.candidate_id AS candidateId, v.updated_at AS updatedAt, v.status,
-           c.name AS candidateName, c.twitch_login AS candidateLogin
+           c.name AS candidateName, c.twitch_login AS candidateLogin, c.enabled AS candidateEnabled,
+           (SELECT COUNT(*) FROM vote_history h WHERE h.vote_id = v.id) AS changeCount
     FROM votes v JOIN candidates c ON c.id = v.candidate_id
     WHERE v.twitch_user_id = ? ORDER BY v.nomination_id
   `).bind(user.twitchUserId).all();
@@ -252,7 +287,23 @@ async function castVote(request: Request, env: Env, nominationId: string) {
   let candidateId = payload.candidateId?.trim() ?? '';
   if (nominationId === 'chatter') {
     if (!payload.twitchLogin?.trim()) throw new ApiError(400, 'Впишите Twitch-ник.', 'twitch_login_required');
-    if (payload.twitchLogin.trim().replace(/^@/, '').toLowerCase() === user.login.toLowerCase()) throw new ApiError(400, 'Нельзя голосовать за себя.', 'self_vote_forbidden');
+    const requestedLogin = payload.twitchLogin.trim().replace(/^@/, '').toLowerCase();
+    if (requestedLogin === user.login.toLowerCase()) throw new ApiError(400, 'Нельзя голосовать за себя.', 'self_vote_forbidden');
+    // Лимит вводов проверяем до запроса к Twitch и до создания кандидата, чтобы при отказе в базе не появлялся новый ник.
+    const existing = await env.DB.prepare(`
+      SELECT c.twitch_login AS login, c.enabled AS candidateEnabled,
+             (SELECT COUNT(*) FROM vote_history h WHERE h.vote_id = v.id) AS changes
+      FROM votes v JOIN candidates c ON c.id = v.candidate_id
+      WHERE v.nomination_id = 'chatter' AND v.twitch_user_id = ?
+    `).bind(user.twitchUserId).first<{ login: string | null; candidateEnabled: number; changes: number }>();
+    // Тот же ник, что уже выбран, — не попытка: ниже сработает ответ `unchanged: true`.
+    const sameLogin = Boolean(existing && existing.login?.toLowerCase() === requestedLogin);
+    // Снятый модератором ник не блокирует: зритель может выбрать другого.
+    if (existing && !sameLogin && existing.candidateEnabled === 1 && 1 + existing.changes >= CHATTER_MAX_ENTRIES) {
+      throw new ApiError(409, `Ник можно вписать не больше ${CHATTER_MAX_ENTRIES} раз. Твой голос уже зафиксирован.`, 'chatter_entries_exhausted');
+    }
+    // Отдельный лимит на запросы к Twitch: ошибочные вводы (опечатка, несуществующий ник) попыткой не считаются.
+    await rateLimit(env, await secretHash(`chatter:${user.twitchUserId}`, env.SESSION_SECRET), 'chatter_lookup', 5);
     const twitch = await resolveTwitchLogin(payload.twitchLogin, env);
     if (twitch.id === user.twitchUserId) throw new ApiError(400, 'Нельзя голосовать за себя.', 'self_vote_forbidden');
     candidateId = await ensureChatterCandidate(env, twitch);
@@ -263,7 +314,7 @@ async function castVote(request: Request, env: Env, nominationId: string) {
   if (!candidate) throw new ApiError(400, 'Номинант не относится к выбранной категории.', 'invalid_candidate');
   if (candidate.twitch_user_id && candidate.twitch_user_id === user.twitchUserId) throw new ApiError(400, 'Нельзя голосовать за себя.', 'self_vote_forbidden');
   const current = await env.DB.prepare('SELECT id, candidate_id, status FROM votes WHERE nomination_id = ? AND twitch_user_id = ?').bind(nominationId, user.twitchUserId).first<{ id: number; candidate_id: string; status: string }>();
-  if (current?.candidate_id === candidateId) return json({ ok: true, unchanged: true, vote: { nominationId, candidateId, status: current.status } });
+  if (current?.candidate_id === candidateId) return json({ ok: true, unchanged: true, vote: { nominationId, candidateId, status: current.status }, chatterEntriesLeft: await chatterEntriesLeft(env, nominationId, user.twitchUserId) });
   const statements = [];
   if (current) statements.push(env.DB.prepare('INSERT INTO vote_history (vote_id, previous_candidate_id, new_candidate_id, changed_at) VALUES (?, ?, ?, ?)').bind(current.id, current.candidate_id, candidateId, timestamp));
   statements.push(env.DB.prepare(`
@@ -274,7 +325,16 @@ async function castVote(request: Request, env: Env, nominationId: string) {
   statements.push(setSetting(env, 'results_dirty', '1', timestamp));
   await env.DB.batch(statements);
   const saved = await env.DB.prepare('SELECT status FROM votes WHERE nomination_id = ? AND twitch_user_id = ?').bind(nominationId, user.twitchUserId).first<{ status: string }>();
-  return json({ ok: true, unchanged: false, vote: { nominationId, candidateId, status: saved?.status ?? 'valid' } });
+  return json({ ok: true, unchanged: false, vote: { nominationId, candidateId, status: saved?.status ?? 'valid' }, chatterEntriesLeft: await chatterEntriesLeft(env, nominationId, user.twitchUserId) });
+}
+
+async function chatterEntriesLeft(env: Env, nominationId: string, twitchUserId: string) {
+  if (nominationId !== 'chatter') return undefined;
+  const row = await env.DB.prepare(`
+    SELECT (SELECT COUNT(*) FROM vote_history h WHERE h.vote_id = v.id) AS changes
+    FROM votes v WHERE v.nomination_id = 'chatter' AND v.twitch_user_id = ?
+  `).bind(twitchUserId).first<{ changes: number }>();
+  return row ? Math.max(0, CHATTER_MAX_ENTRIES - 1 - row.changes) : CHATTER_MAX_ENTRIES;
 }
 
 async function adminOverview(request: Request, env: Env) {
@@ -287,7 +347,7 @@ async function adminOverview(request: Request, env: Env) {
       SUM(CASE WHEN v.status = 'valid' THEN 1 ELSE 0 END) AS validVotes
       FROM nominations n LEFT JOIN votes v ON v.nomination_id = n.id WHERE n.enabled = 1 GROUP BY n.id ORDER BY n.sort_order`).all(),
     env.DB.prepare('SELECT MAX(updated_at) AS lastVoteAt FROM votes').first(),
-    env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('voting_status', 'chatter_free_input')").all<{ key: string; value: string }>(),
+    env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('voting_status')").all<{ key: string; value: string }>(),
     env.DB.prepare("SELECT COUNT(DISTINCT twitch_user_id) AS recentUsers FROM votes WHERE updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 day')").first(),
   ]);
   return json({ counts, nominations: nominations.results, lastVote, recent, settings: Object.fromEntries(settings.results.map(row => [row.key, row.value])) });
@@ -333,7 +393,8 @@ async function adminCandidates(request: Request, env: Env) {
   const result = await env.DB.prepare(`SELECT c.id, c.nomination_id AS nominationId, n.title AS nominationTitle,
     c.name, c.image_url AS imageUrl, c.twitch_user_id AS twitchUserId, c.twitch_login AS twitchLogin,
     c.enabled, c.sort_order AS sortOrder,
-    (SELECT COUNT(*) FROM votes v WHERE v.candidate_id = c.id AND v.status = 'valid') AS validVotes
+    (SELECT COUNT(*) FROM votes v WHERE v.candidate_id = c.id AND v.status = 'valid') AS validVotes,
+    (SELECT COUNT(*) FROM votes v WHERE v.candidate_id = c.id) AS totalVotes
     FROM candidates c JOIN nominations n ON n.id = c.nomination_id
     ORDER BY n.sort_order, validVotes DESC, c.sort_order`).all();
   return json({ candidates: result.results });
@@ -475,21 +536,6 @@ async function updateVotingStatus(request: Request, env: Env) {
   return json({ ok: true, status: payload.status });
 }
 
-async function updateChatterFreeInput(request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
-  requireCsrf(request, admin);
-  const payload = await body<{ enabled?: unknown }>(request);
-  if (typeof payload.enabled !== 'boolean') throw new ApiError(400, 'Передайте enabled: true или false.', 'invalid_payload');
-  const timestamp = now();
-  await env.DB.batch([
-    setSetting(env, 'chatter_free_input', payload.enabled ? '1' : '0', timestamp),
-    env.DB
-      .prepare('INSERT INTO moderation_actions (action, details, created_at, admin_twitch_user_id) VALUES (?, ?, ?, ?)')
-      .bind(payload.enabled ? 'chatter_free_input_on' : 'chatter_free_input_off', JSON.stringify({ enabled: payload.enabled }), timestamp, admin.twitchUserId),
-  ]);
-  return json({ ok: true, enabled: payload.enabled });
-}
-
 async function updateNomination(request: Request, env: Env, id: string) {
   const admin = await requireAdmin(request, env); requireCsrf(request, admin);
   const payload = await body<{ enabled?: boolean }>(request);
@@ -558,6 +604,8 @@ async function finalizeResults(request: Request, env: Env) {
         FROM candidates c JOIN nominations n ON n.id = c.nomination_id AND n.enabled = 1
         LEFT JOIN votes v ON v.candidate_id = c.id AND v.status = 'valid'
         WHERE c.enabled = 1 GROUP BY c.nomination_id, c.id
+        -- «Чаттер»: ники без учтённых голосов в итоги не попадают.
+        HAVING c.nomination_id <> 'chatter' OR COUNT(v.id) > 0
       ), ranked AS (
         SELECT *, DENSE_RANK() OVER (PARTITION BY nomination_id ORDER BY vote_count DESC) AS position FROM counts
       ), leaders AS (
@@ -747,7 +795,9 @@ async function adminResults(request: Request, env: Env) {
     COUNT(v.id) * 100.0 / NULLIF(SUM(COUNT(v.id)) OVER (PARTITION BY n.id), 0) AS percent
     FROM nominations n JOIN candidates c ON c.nomination_id = n.id AND c.enabled = 1
     LEFT JOIN votes v ON v.candidate_id = c.id AND v.status = 'valid'
-    WHERE n.enabled = 1 GROUP BY n.id, c.id ORDER BY n.sort_order, voteCount DESC, c.sort_order`).all();
+    WHERE n.enabled = 1 GROUP BY n.id, c.id
+    HAVING n.id <> 'chatter' OR COUNT(v.id) > 0
+    ORDER BY n.sort_order, voteCount DESC, c.sort_order`).all();
   return json({ snapshot, dirty: await setting(env, 'results_dirty') === '1', entries: snapshotId ? await snapshotResults(env, snapshotId) : [], liveEntries: live.results, customAward, readiness: await ceremonyReadiness(env, request) });
 }
 
@@ -778,6 +828,11 @@ async function publicResults(env: Env) {
       percent: total ? Math.round(Number(row.voteCount) / total * 10_000) / 100 : 0, rank: row.rank, isWinner: row.isWinner === 1,
     })) };
   });
+  // «Чаттер»: публично только первые строки рейтинга (плюс все, кто делит первое место). totalVotes не пересчитываем.
+  for (const nomination of nominations) {
+    if (nomination.id !== 'chatter') continue;
+    nomination.entries = (nomination.entries as Array<{ rank: number }>).filter((entry, index) => index < CHATTER_PUBLIC_LIMIT || entry.rank === 1);
+  }
   const customAwardPublished = await setting(env, 'custom_award_published') === '1'
     && Boolean(await env.DB.prepare(`SELECT 1 FROM result_publications
       WHERE snapshot_id = ? AND nomination_id = ? AND publication_cycle = ?`)
@@ -795,7 +850,12 @@ async function publicResults(env: Env) {
   return json({ published: nominations.length > 0, nominations });
 }
 
-function csvCell(value: unknown) { return `"${String(value ?? '').replace(/"/g, '""')}"`; }
+// Значения, начинающиеся с = + - @, Excel выполняет как формулу — экранируем апострофом.
+function csvCell(value: unknown) {
+  let text = String(value ?? '');
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
 
 async function exportCsv(request: Request, env: Env, url: URL) {
   await requireAdmin(request, env);
@@ -817,5 +877,5 @@ async function exportCsv(request: Request, env: Env, url: URL) {
     rows = result.results.map(row => [row.title, row.name, row.login, row.twitch_user_id, row.twitch_created_at, row.created_at, row.updated_at, row.status]);
   }
   const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n');
-  return new Response(csv, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="camca63-${kind}.csv"`, 'Cache-Control': 'no-store' } });
+  return new Response(csv, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="camca63-${kind}.csv"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }

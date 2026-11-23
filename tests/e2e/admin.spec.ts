@@ -26,9 +26,9 @@ test('админ запускает репетицию, видит причин�
       ? { ready: true, problems: [] }
       : { ready: false, problems: [{ nominationId: 'custom-award', nominationTitle: 'Ваша номинация', code: 'custom_award_selection_missing', message: 'Ваша номинация: выберите предложение для вручения.' }] },
   } }));
-  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'closed', chatterFreeInput: false }, nominations: [{ id: 'game', title: 'Игра года', description: '', sortOrder: 1, enabled: true, canVote: false, unavailableReason: 'Голосование закрыто.', candidates: [] }] } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'closed', chatterFreeInput: true }, nominations: [{ id: 'game', title: 'Игра года', description: '', sortOrder: 1, enabled: true, canVote: false, unavailableReason: 'Голосование закрыто.', candidates: [] }] } }));
   await page.route('**/api/admin/candidates', route => route.fulfill({ json: { candidates: [
-    { id: 'chatter-9', nominationId: 'chatter', name: 'Troll', twitchLogin: 'troll', enabled: 1, validVotes: 1 },
+    { id: 'chatter-9', nominationId: 'chatter', name: 'Troll', twitchLogin: 'troll', enabled: 1, validVotes: 1, totalVotes: 1 },
   ] } }));
   let hideRequests = 0;
   await page.route('**/api/admin/candidates/chatter-9', route => { hideRequests++; return route.fulfill({ status: 500, json: { error: 'Ник не снят' } }); });
@@ -106,15 +106,17 @@ test('исключение голоса: модальное окно с прич
   } }));
   await page.route('**/api/admin/overview', route => route.fulfill({ json: {
     counts: { users: 1, validVotes: 1, excludedVotes: 0 }, recent: { recentUsers: 1 }, lastVote: { lastVoteAt: null },
-    nominations: [{ id: 'game', title: 'Игра года', votes: 1, validVotes: 1 }], settings: { voting_status: 'open', chatter_free_input: '1' },
+    nominations: [{ id: 'game', title: 'Игра года', votes: 1, validVotes: 1 }], settings: { voting_status: 'open' },
   } }));
   await page.route('**/api/admin/votes?*', route => route.fulfill({ json: { votes: [vote], pagination: { page: 1, limit: 100, total: 1, pages: 1 } } }));
   await page.route('**/api/admin/results', route => route.fulfill({ status: 500, json: { error: 'Сбой результатов' } }));
   await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [] } }));
   await page.route('**/api/admin/candidates', route => route.fulfill({ json: { candidates: [
-    { id: 'chatter-2', nominationId: 'chatter', name: 'Second', twitchLogin: 'second', enabled: 1, validVotes: 2 },
-    { id: 'chatter-1', nominationId: 'chatter', name: 'First', twitchLogin: 'first', enabled: 1, validVotes: 5 },
-    { id: 'chatter-3', nominationId: 'chatter', name: 'Banned', twitchLogin: 'banned', enabled: 0, validVotes: 0 },
+    { id: 'chatter-2', nominationId: 'chatter', name: 'Second', twitchLogin: 'second', enabled: 1, validVotes: 2, totalVotes: 2 },
+    { id: 'chatter-1', nominationId: 'chatter', name: 'First', twitchLogin: 'first', enabled: 1, validVotes: 5, totalVotes: 5 },
+    { id: 'chatter-3', nominationId: 'chatter', name: 'Banned', twitchLogin: 'banned', enabled: 0, validVotes: 0, totalVotes: 0 },
+    // Ник, за который никто сейчас не голосует (зритель передумал), в списке не показывается.
+    { id: 'chatter-4', nominationId: 'chatter', name: 'Empty', twitchLogin: 'empty_nick', enabled: 1, validVotes: 0, totalVotes: 0 },
   ] } }));
   await page.route('**/api/admin/custom-awards?*', route => route.fulfill({ json: { proposals: [], customAwardPublished: false } }));
   await page.route('**/api/admin/actions?*', route => route.fulfill({ json: { actions: [], pagination: { page: 1, limit: 3, total: 0, pages: 1 } } }));
@@ -133,6 +135,7 @@ test('исключение голоса: модальное окно с прич
   await expect(page.locator('.chatter-admin-list article').first()).toContainText('5 голосов');
   await expect(page.locator('.chatter-admin-list article').nth(1)).toContainText('2 голоса');
   await expect(page.locator('.chatter-admin-list article').nth(2)).toContainText('снят');
+  await expect(page.locator('.chatter-admin-list')).not.toContainText('@empty_nick');
 
   const exclude = page.getByRole('button', { name: 'Один: исключить' });
   await expect(exclude).toBeVisible();

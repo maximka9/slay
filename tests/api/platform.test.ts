@@ -112,4 +112,35 @@ describe('voting platform invariants', () => {
     expect(dataSource).toContain("nomination.id === 'chatter' ? []");
     expect(chatterMigration).toContain("exclusion_reason = 'Голос за себя'");
   });
+
+  it('«Чаттер года»: не больше 2 вводов ника, лимит до запроса к Twitch, итоги без ников с 0 голосов', () => {
+    const castVote = apiSource.slice(apiSource.indexOf('async function castVote('), apiSource.indexOf('async function chatterEntriesLeft('));
+    expect(apiSource).toContain('const CHATTER_MAX_ENTRIES = 2;');
+    expect(castVote).toContain("'chatter_entries_exhausted'");
+    expect(castVote).toContain("'chatter_lookup'");
+    expect(castVote.indexOf("'chatter_entries_exhausted'")).toBeLessThan(castVote.indexOf('resolveTwitchLogin('));
+    expect(castVote.indexOf("'chatter_entries_exhausted'")).toBeLessThan(castVote.indexOf('ensureChatterCandidate('));
+    expect(castVote).toContain('existing.candidateEnabled === 1');
+    expect(apiSource).toContain("HAVING c.nomination_id <> 'chatter' OR COUNT(v.id) > 0");
+    expect(apiSource).toContain("HAVING n.id <> 'chatter' OR COUNT(v.id) > 0");
+    expect(apiSource).not.toContain('updateChatterFreeInput');
+  });
+
+  it('скрипты сброса и обезличивания учитывают внешние ключи', () => {
+    const reset = readFileSync(resolve(root, 'scripts/reset-test-data.sql'), 'utf8');
+    const anonymize = readFileSync(resolve(root, 'scripts/anonymize-after-awards.sql'), 'utf8');
+    const activeReset = reset.split('\n').filter(line => !line.trim().startsWith('--')).join('\n');
+    expect(activeReset).toContain("DELETE FROM candidates WHERE nomination_id = 'chatter';");
+    expect(activeReset.indexOf("DELETE FROM candidates")).toBeGreaterThan(activeReset.indexOf('DELETE FROM result_entries;'));
+    expect(anonymize.indexOf('DELETE FROM custom_award_proposals')).toBeLessThan(anonymize.indexOf('DELETE FROM users'));
+    expect(anonymize).toContain('NOT IN (SELECT twitch_user_id FROM custom_award_selection)');
+  });
+
+  it('CSV экранирует формулы, вход ограничен 60 запросами в минуту', () => {
+    expect(apiSource).toContain("text = `'${text}`");
+    expect(apiSource).toContain("'oauth_login', 60");
+    expect(apiSource).toContain("'oauth_callback', 60");
+    expect(apiSource).toContain('safeReturnTo(url.searchParams.get(');
+    expect(apiSource).toContain('safeReturnTo(stateRow.return_to)');
+  });
 });

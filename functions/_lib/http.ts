@@ -1,4 +1,5 @@
 import { ApiError } from './types';
+import { parseCookieHeader } from './url';
 
 const securityHeaders = {
   'Cache-Control': 'no-store, max-age=0',
@@ -31,12 +32,11 @@ export async function body<T>(request: Request): Promise<T> {
   catch { throw new ApiError(400, 'Некорректный JSON.', 'invalid_json'); }
 }
 
+// Чистые функции (без типов Cloudflare) лежат в url.ts — их проверяют юнит-тесты.
+export { safeDecode, safeReturnTo } from './url';
+
 export function cookies(request: Request) {
-  const value = request.headers.get('cookie') ?? '';
-  return Object.fromEntries(value.split(';').map(item => item.trim()).filter(Boolean).map(item => {
-    const index = item.indexOf('=');
-    return index < 0 ? [item, ''] : [item.slice(0, index), decodeURIComponent(item.slice(index + 1))];
-  }));
+  return parseCookieHeader(request.headers.get('cookie'));
 }
 
 export function cookie(name: string, value: string, request: Request, maxAge: number) {

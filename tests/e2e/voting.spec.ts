@@ -12,7 +12,7 @@ const nomination = {
 test('авторизованный зритель выбирает и меняет голос без перезагрузки', async ({ page }) => {
   const choices: string[] = [];
   await page.route('**/api/me', route => route.fulfill({ json: { authenticated: true, isAdmin: false, csrfToken: 'csrf-test', user: { twitchUserId: '42', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-11-11T00:00:00Z' } } }));
-  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: false }, nominations: [nomination] } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [nomination] } }));
   await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: [] } }));
   await page.route('**/api/my-custom-award', route => route.fulfill({ json: { proposal: null } }));
   await page.route('**/api/votes/game', async route => {
@@ -36,7 +36,7 @@ test('авторизованный зритель выбирает и меняе
 test('прогресс учитывает только действительные голоса в активных номинациях', async ({ page }) => {
   await page.route('**/api/me', route => route.fulfill({ json: { authenticated: true, isAdmin: false, csrfToken: 'csrf-test', user: { twitchUserId: '42', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-11-11T00:00:00Z' } } }));
   await page.route('**/api/nominations', route => route.fulfill({ json: {
-    voting: { status: 'open', chatterFreeInput: false },
+    voting: { status: 'open', chatterFreeInput: true },
     nominations: [nomination, { id: 'custom-award', title: 'Ваша номинация', description: 'Придумайте награду', sortOrder: 9, enabled: true, canVote: true, unavailableReason: null, candidates: [] }],
   } }));
   await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: [
@@ -55,7 +55,7 @@ test('ошибка необязательного обновления не от
   await page.route('**/api/nominations', route => {
     return refreshShouldFail
       ? route.fulfill({ status: 503, json: { error: 'refresh_failed', message: 'Не удалось обновить список.' } })
-      : route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: false }, nominations: [nomination] } });
+      : route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [nomination] } });
   });
   await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: [] } }));
   await page.route('**/api/my-custom-award', route => route.fulfill({ json: { proposal: null } }));
@@ -77,7 +77,7 @@ test('после ошибки загрузки номинации можно з�
   await page.route('**/api/nominations', route => {
     nominationRequests += 1;
     return allowSuccess
-      ? route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: false }, nominations: [nomination] } })
+      ? route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [nomination] } })
       : route.fulfill({ status: 503, json: { error: 'temporarily_unavailable', message: 'Номинации временно недоступны.' } });
   });
 
@@ -92,7 +92,7 @@ test('после ошибки загрузки номинации можно з�
 test('плеер показывает актуальное имя кандидата из API', async ({ page }) => {
   const renamed = { ...nomination, candidates: [{ ...nomination.candidates[1], name: 'Resident Evil 4 — новое имя' }] };
   await page.route('**/api/me', route => route.fulfill({ json: { authenticated: false, isAdmin: false, user: null } }));
-  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: false }, nominations: [renamed] } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [renamed] } }));
 
   await page.goto('/vote');
   const card = page.getByRole('article').filter({ hasText: 'Resident Evil 4 — новое имя' });
@@ -103,7 +103,7 @@ test('плеер показывает актуальное имя кандида
 test('серверная причина блокирует категорию независимо от часов браузера', async ({ page }) => {
   await page.route('**/api/me', route => route.fulfill({ json: { authenticated: true, isAdmin: false, csrfToken: 'csrf-test', user: { twitchUserId: '42', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-11-11T00:00:00Z' } } }));
   await page.route('**/api/nominations', route => route.fulfill({ json: {
-    voting: { status: 'open', chatterFreeInput: false },
+    voting: { status: 'open', chatterFreeInput: true },
     nominations: [{ ...nomination, canVote: false, unavailableReason: 'Номинация ещё не готова к голосованию.' }],
   } }));
   await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: [] } }));
@@ -117,7 +117,7 @@ test('серверная причина блокирует категорию н
 test('зритель сохраняет и обновляет собственную номинацию', async ({ page }) => {
   const saved: Array<{ awardTitle: string; recipient: string }> = [];
   await page.route('**/api/me', route => route.fulfill({ json: { authenticated: true, isAdmin: false, csrfToken: 'csrf-test', user: { twitchUserId: '42', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-11-11T00:00:00Z' } } }));
-  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: false }, nominations: [{ id: 'custom-award', title: 'Ваша номинация', description: 'Придумайте награду', sortOrder: 9, enabled: true, canVote: true, unavailableReason: null, candidates: [] }] } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [{ id: 'custom-award', title: 'Ваша номинация', description: 'Придумайте награду', sortOrder: 9, enabled: true, canVote: true, unavailableReason: null, candidates: [] }] } }));
   await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: [] } }));
   await page.route('**/api/my-custom-award', route => route.fulfill({ json: { proposal: null } }));
   await page.route('**/api/custom-award', async route => {
@@ -190,4 +190,80 @@ test('«Чаттер года»: сохранённый голос показы�
   await page.route('**/api/my-custom-award', route => route.fulfill({ json: { proposal: null } }));
   await page.goto('/vote');
   await expect(page.getByTestId('chatter-current')).toContainText('Твой голос: @some_user');
+});
+
+const viewerMe = { authenticated: true, isAdmin: false, csrfToken: 'csrf-test', user: { twitchUserId: '42', login: 'viewer', displayName: 'Viewer', avatarUrl: '', twitchCreatedAt: '2020-01-01T00:00:00Z', firstSeenAt: '2026-11-11T00:00:00Z' } };
+const chatterNomination = {
+  id: 'chatter', title: 'Чаттер года', description: '', sortOrder: 8,
+  enabled: true, canVote: true, unavailableReason: null, candidates: [],
+};
+async function mockChatter(page: import('@playwright/test').Page, vote: Record<string, unknown> | null) {
+  await page.route('**/api/me', route => route.fulfill({ json: viewerMe }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [chatterNomination] } }));
+  await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: vote ? [{ nominationId: 'chatter', candidateId: 'chatter-777', candidateName: 'Some_User', candidateLogin: 'some_user', updatedAt: '2026-11-11T00:00:00Z', status: 'valid', ...vote }] : [] } }));
+  await page.route('**/api/my-custom-award', route => route.fulfill({ json: { proposal: null } }));
+}
+
+test('«Чаттер года»: после первого голоса можно изменить ник ещё 1 раз', async ({ page }) => {
+  await mockChatter(page, { changeCount: 0, candidateEnabled: 1 });
+  await page.goto('/vote');
+  await expect(page.getByTestId('chatter-left')).toHaveText('Изменить ник можно ещё 1 раз.');
+  await expect(page.locator('#chatter-login')).toBeVisible();
+});
+
+test('«Чаттер года»: после 2 вводов форма скрыта', async ({ page }) => {
+  await mockChatter(page, { changeCount: 1, candidateEnabled: 1 });
+  await page.goto('/vote');
+  await expect(page.getByTestId('chatter-locked')).toHaveText('Ты уже дважды вписывал ник — голос зафиксирован.');
+  await expect(page.locator('#chatter-login')).toHaveCount(0);
+});
+
+test('«Чаттер года»: если ник снят модератором, можно выбрать другого даже после 2 вводов', async ({ page }) => {
+  await mockChatter(page, { changeCount: 1, candidateEnabled: 0 });
+  await page.goto('/vote');
+  await expect(page.getByTestId('chatter-removed')).toContainText('ник снят модератором');
+  await expect(page.locator('#chatter-login')).toBeVisible();
+  await expect(page.getByTestId('chatter-locked')).toHaveCount(0);
+});
+
+test('«Чаттер года»: второй ввод тратит последнюю попытку и скрывает форму', async ({ page }) => {
+  await mockChatter(page, { changeCount: 0, candidateEnabled: 1 });
+  await page.route('**/api/votes/chatter', route => route.fulfill({ json: { ok: true, unchanged: false, chatterEntriesLeft: 0, vote: { nominationId: 'chatter', candidateId: 'chatter-888', status: 'valid' } } }));
+  await page.goto('/vote');
+  await page.locator('#chatter-login').fill('other_user');
+  await page.locator('.free-chatter button').click();
+  await expect(page.getByTestId('chatter-current')).toContainText('@other_user');
+  await expect(page.getByTestId('chatter-locked')).toBeVisible();
+  await expect(page.locator('#chatter-login')).toHaveCount(0);
+});
+
+test('сообщение об ошибке входа показывается и убирается из адреса', async ({ page }) => {
+  await page.route('**/api/me', route => route.fulfill({ json: { authenticated: false, isAdmin: false, user: null } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [nomination] } }));
+  await page.goto('/vote?auth=error&reason=oauth_state_expired');
+  await expect(page.getByTestId('auth-notice')).toContainText('Ссылка входа устарела');
+  await expect.poll(() => page.url()).not.toContain('auth=');
+});
+
+test('отмена входа на Twitch объясняется зрителю', async ({ page }) => {
+  await page.route('**/api/me', route => route.fulfill({ json: { authenticated: false, isAdmin: false, user: null } }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [nomination] } }));
+  await page.goto('/vote?auth=cancelled');
+  await expect(page.getByTestId('auth-notice')).toContainText('Вход через Twitch отменён.');
+});
+
+test('истёкшая сессия: сообщение и кнопка входа вместо молчаливой ошибки', async ({ page }) => {
+  let sessionExpired = false;
+  await page.route('**/api/me', route => route.fulfill({ json: sessionExpired ? { authenticated: false, isAdmin: false, user: null } : viewerMe }));
+  await page.route('**/api/nominations', route => route.fulfill({ json: { voting: { status: 'open', chatterFreeInput: true }, nominations: [nomination] } }));
+  await page.route('**/api/my-votes', route => route.fulfill({ json: { votes: [] } }));
+  await page.route('**/api/my-custom-award', route => route.fulfill({ json: { proposal: null } }));
+  await page.route('**/api/votes/game', route => {
+    sessionExpired = true;
+    return route.fulfill({ status: 401, json: { error: 'authentication_required', message: 'Войдите через Twitch.' } });
+  });
+  await page.goto('/vote');
+  await page.getByRole('article').filter({ hasText: 'Heavy Rain' }).getByRole('button', { name: 'Выбрать' }).click();
+  await expect(page.getByRole('alert')).toContainText('Сессия устарела');
+  await expect(page.locator('.voting-profile').getByRole('link', { name: /Войти через Twitch/ })).toBeVisible();
 });

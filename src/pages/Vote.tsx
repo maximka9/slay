@@ -6,7 +6,15 @@ import { Layout } from '../components/Layout';
 import { MediaView } from '../components/MediaView';
 import { VideoPlayerModal } from '../components/VideoPlayerModal';
 import { useAuth } from '../components/AuthProvider';
-import { api, mutation, type CustomAwardProposal, type MyVote, type VotingCandidate, type VotingData, type VotingNomination } from '../lib/api';
+import { ApiClientError, api, mutation, type CustomAwardProposal, type MyVote, type VotingCandidate, type VotingData, type VotingNomination } from '../lib/api';
+
+// «Чаттер года»: сколько раз один зритель может вписать ник (первый голос + изменения). Совпадает с сервером.
+const CHATTER_MAX_ENTRIES = 2;
+
+function timesWord(count: number) {
+  const mod10 = count % 10, mod100 = count % 100;
+  return mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'раза' : 'раз';
+}
 
 function nomineeFor(candidate: VotingCandidate): Nominee {
   const local = awards.categories.flatMap(category => category.nominees).find(nominee => nominee.id === candidate.id);
@@ -82,6 +90,21 @@ export function Vote() {
 
   useEffect(() => { void loadNominations(); }, [loadNominations]);
 
+  const reloadMyVotes = useCallback(async () => {
+    const result = await api<{ votes: MyVote[] }>('/api/my-votes');
+    setVotes(Object.fromEntries(result.votes.map(vote => [vote.nominationId, vote])));
+  }, []);
+
+  // Сессия истекла или CSRF-токен устарел: обновляем состояние входа — тогда на экране появится кнопка «Войти через Twitch».
+  // Запрос не повторяем автоматически: если вход сменился на другой аккаунт, голос ушёл бы от чужого имени.
+  const handleAuthFailure = async (err: unknown) => {
+    if (!(err instanceof ApiClientError) || (err.status !== 401 && err.code !== 'csrf_failed')) return false;
+    await auth.refresh();
+    setNotice('');
+    setError('Сессия устарела — выбор не сохранён. Войдите через Twitch ещё раз или повторите выбор.');
+    return true;
+  };
+
   useEffect(() => {
     if (!auth.authenticated) { setVotes({}); setProposal(null); return; }
     Promise.all([
@@ -107,9 +130,15 @@ export function Vote() {
     if (cleanLogin && auth.user && cleanLogin.toLowerCase() === auth.user.login.toLowerCase()) { setNotice(''); setError('Нельзя голосовать за себя.'); return; }
     setPending(nomination.id); setError(''); setNotice('');
     try {
-      const result = await mutation<{ vote: MyVote }>(`/api/votes/${encodeURIComponent(nomination.id)}`, 'PUT', auth.csrfToken, { candidateId, twitchLogin });
+      const result = await mutation<{ vote: MyVote; unchanged?: boolean; chatterEntriesLeft?: number }>(`/api/votes/${encodeURIComponent(nomination.id)}`, 'PUT', auth.csrfToken, { candidateId, twitchLogin });
       const candidate = nomination.candidates.find(item => item.id === result.vote.candidateId);
-      setVotes(current => ({ ...current, [nomination.id]: { ...result.vote, candidateName: candidate?.name ?? cleanLogin ?? 'Выбранный кандидат', candidateLogin: cleanLogin ?? candidate?.twitchLogin ?? null, updatedAt: new Date().toISOString() } }));
+      setVotes(current => {
+        const previous = current[nomination.id];
+        const changeCount = typeof result.chatterEntriesLeft === 'number'
+          ? Math.max(0, CHATTER_MAX_ENTRIES - 1 - result.chatterEntriesLeft)
+          : previous ? (previous.changeCount ?? 0) + (result.unchanged ? 0 : 1) : 0;
+        return { ...current, [nomination.id]: { ...result.vote, candidateName: candidate?.name ?? cleanLogin ?? 'Выбранный кандидат', candidateLogin: cleanLogin ?? candidate?.twitchLogin ?? null, updatedAt: new Date().toISOString(), candidateEnabled: 1, changeCount } };
+      });
       setConfirmation(`vote:${nomination.id}:${result.vote.candidateId ?? twitchLogin ?? ''}`);
       setNotice(`Голос в номинации «${nomination.title}» сохранён.`);
       setFreeLogin('');
@@ -118,7 +147,12 @@ export function Vote() {
       } catch {
         // Голос уже сохранён; обновление списка кандидатов не влияет на результат операции.
       }
-    } catch (err) { setError(err instanceof Error ? err.message : 'Не удалось сохранить голос.'); }
+    } catch (err) {
+      if (await handleAuthFailure(err)) return;
+      setError(err instanceof Error ? err.message : 'Не удалось сохранить голос.');
+      // Лимит вводов исчерпан (например, голос меняли в другой вкладке) — подтягиваем актуальное состояние, форма скроется.
+      if (err instanceof ApiClientError && err.code === 'chatter_entries_exhausted') void reloadMyVotes().catch(() => undefined);
+    }
     finally { setPending(''); }
   };
 
@@ -131,11 +165,18 @@ export function Vote() {
       setProposal(saved);
       setConfirmation(`custom:${nomination.id}`);
       setNotice(proposal ? 'Предложение обновлено.' : 'Предложение сохранено. До закрытия голосования его можно изменить.');
-    } catch (err) { setError(err instanceof Error ? err.message : 'Не удалось сохранить предложение.'); }
+    } catch (err) {
+      if (await handleAuthFailure(err)) return;
+      setError(err instanceof Error ? err.message : 'Не удалось сохранить предложение.');
+    }
     finally { setPending(''); }
   };
 
   if (!data) return <Layout><main className="vote-page loading-page"><span className="eyebrow">CAMCA63 AWARDS / VOTE</span><h1>{nominationsLoading ? <>ЗАГРУЖАЕМ <em>НОМИНАЦИИ</em></> : <>НЕ УДАЛОСЬ <em>ЗАГРУЗИТЬ</em></>}</h1>{error && <><p className="form-error" role="alert">{error}</p><button className="button outline" onClick={() => void loadNominations()} disabled={nominationsLoading}>{nominationsLoading ? 'ЗАГРУЖАЕМ…' : 'ПОВТОРИТЬ ЗАГРУЗКУ'}</button></>}</main></Layout>;
+  const chatterVote = votes.chatter;
+  const chatterRemoved = chatterVote?.candidateEnabled === 0;
+  const chatterEntriesLeft = chatterVote ? Math.max(0, CHATTER_MAX_ENTRIES - 1 - (chatterVote.changeCount ?? 0)) : CHATTER_MAX_ENTRIES;
+  const chatterCanEdit = chatterEntriesLeft > 0 || chatterRemoved;
   const statusText = data.voting.status === 'open' ? 'ГОЛОСОВАНИЕ ОТКРЫТО' : data.voting.status === 'closed' ? 'ГОЛОСОВАНИЕ ЗАКРЫТО' : 'ИДЁТ ПОДГОТОВКА';
 
   return <Layout><main className="vote-page">
@@ -158,9 +199,11 @@ export function Vote() {
           {proposal?.status === 'excluded' && <p className="form-error" role="status">Предложение исключено модератором. Изменение текста не снимает ограничение.</p>}
           <button className="button primary" disabled={!open || pending === nomination.id}>{pending === nomination.id ? 'СОХРАНЯЕМ…' : proposal ? 'ОБНОВИТЬ ПРЕДЛОЖЕНИЕ' : 'СОХРАНИТЬ ПРЕДЛОЖЕНИЕ'}</button>
         </form> : nomination.id === 'chatter' ? <div className={`free-chatter ${confirmation.startsWith('vote:chatter') ? 'just-confirmed' : ''}`}>
-          <p className="free-chatter-rules">Впиши Twitch-ник того, кого считаешь чаттером года. Победит ник, который напишут чаще всего. Голосовать за себя нельзя, изменить голос можно до закрытия голосования.</p>
-          {votes.chatter && <p className="free-chatter-current" data-testid="chatter-current"><Check size={18} /> Твой голос: <b>{votes.chatter.candidateLogin ? `@${votes.chatter.candidateLogin}` : votes.chatter.candidateName}</b>{votes.chatter.status === 'excluded' && <span> — исключён модератором</span>}</p>}
-          {open ? <form onSubmit={event => { event.preventDefault(); void choose(nomination, undefined, freeLogin); }}><label htmlFor="chatter-login">Twitch-ник</label><div><input id="chatter-login" value={freeLogin} onChange={event => setFreeLogin(event.target.value)} placeholder="username" required pattern="@?[A-Za-z0-9_]{3,25}" title="Twitch-ник: латинские буквы, цифры и _" autoComplete="off" spellCheck={false} maxLength={26} /><button className="button primary" disabled={pending === nomination.id}>{pending === nomination.id ? 'ПРОВЕРЯЕМ…' : votes.chatter ? 'Изменить голос' : 'Проголосовать'}</button></div></form> : null}
+          <p className="free-chatter-rules">Впиши Twitch-ник того, кого считаешь чаттером года. Победит ник, который напишут чаще всего. Голосовать за себя нельзя. Ник можно вписать не больше {CHATTER_MAX_ENTRIES} раз: первый голос и одно изменение.</p>
+          {chatterVote && <p className="free-chatter-current" data-testid="chatter-current"><Check size={18} /> Твой голос: <b>{chatterVote.candidateLogin ? `@${chatterVote.candidateLogin}` : chatterVote.candidateName}</b>{chatterVote.status === 'excluded' && <span> — исключён модератором</span>}{chatterRemoved && <span data-testid="chatter-removed"> — ник снят модератором, выбери другого</span>}</p>}
+          {open && chatterVote && chatterCanEdit && !chatterRemoved && <p className="free-chatter-left" data-testid="chatter-left">Изменить ник можно ещё {chatterEntriesLeft} {timesWord(chatterEntriesLeft)}.</p>}
+          {open && !chatterCanEdit && <p className="free-chatter-locked" data-testid="chatter-locked">Ты уже дважды вписывал ник — голос зафиксирован.</p>}
+          {open && chatterCanEdit ? <form onSubmit={event => { event.preventDefault(); void choose(nomination, undefined, freeLogin); }}><label htmlFor="chatter-login">Twitch-ник</label><div><input id="chatter-login" value={freeLogin} onChange={event => setFreeLogin(event.target.value)} placeholder="username" required pattern="@?[A-Za-z0-9_]{3,25}" title="Twitch-ник: латинские буквы, цифры и _" autoComplete="off" spellCheck={false} maxLength={26} /><button className="button primary" disabled={pending === nomination.id}>{pending === nomination.id ? 'ПРОВЕРЯЕМ…' : chatterVote ? 'Изменить голос' : 'Проголосовать'}</button></div></form> : null}
         </div> : <>
           {nomination.candidates.length ? <div className={`voting-grid ${nomination.candidates.length > 6 ? 'many' : ''}`}>{nomination.candidates.map((candidate, index) => {
             const nominee = nomineeFor(candidate); const isSelected = selected === candidate.id; const hasVideo = Boolean(nominee.videos?.length);

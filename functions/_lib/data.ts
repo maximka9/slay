@@ -22,6 +22,7 @@ export async function publicNominations(env: Env) {
   const globalStatus = values.voting_status ?? 'preparation';
   // «Чаттер года» — только свободный ввод ника; список вписанных ников публично не показывается,
   // чтобы зрители писали ник сами, а не выбирали из чужих вариантов.
+  // Устарело, всегда true: поле оставлено в ответе для совместимости.
   const chatterFreeInput = true;
   const mappedNominations = nominations.results.map((nomination: Record<string, unknown>) => {
     const nominationCandidates = nomination.id === 'chatter' ? [] : candidates.results

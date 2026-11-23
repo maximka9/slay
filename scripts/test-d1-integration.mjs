@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
 const wrangler = fileURLToPath(new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url));
 const database = 'camca63-awards-2026';
@@ -8,6 +9,13 @@ const testUser = '__camca63_d1_integration__';
 
 function execute(sql) {
   const output = execFileSync(process.execPath, [wrangler, 'd1', 'execute', database, '--local', '--json', '--command', sql], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  return JSON.parse(output);
+}
+
+function executeFile(file) {
+  const output = execFileSync(process.execPath, [wrangler, 'd1', 'execute', database, '--local', '--json', '--file', file], {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'],
   });
   return JSON.parse(output);
@@ -168,4 +176,107 @@ execute(`
   DELETE FROM users WHERE twitch_user_id = '${testUser}';
 `);
 
-console.log('D1 integration: category order, 22 renamed clips, vote preservation, publication cycles and independent custom award disclosure verified.');
+// «Чаттер года»: лимит 2 ввода ника и итоги без ников с 0 голосов.
+const chatterVoter = '__camca63_chatter_voter__';
+const chatterSnapshot = 'snapshot-__camca63_chatter_integration__';
+function cleanupChatter() {
+  execute(`
+    DELETE FROM result_entries WHERE snapshot_id = '${chatterSnapshot}';
+    DELETE FROM results_snapshots WHERE id = '${chatterSnapshot}';
+    DELETE FROM vote_history WHERE vote_id IN (SELECT id FROM votes WHERE twitch_user_id = '${chatterVoter}');
+    DELETE FROM votes WHERE twitch_user_id = '${chatterVoter}';
+    DELETE FROM candidates WHERE id IN ('chatter-__it_a__', 'chatter-__it_b__', 'chatter-__it_empty__');
+    DELETE FROM users WHERE twitch_user_id = '${chatterVoter}';
+  `);
+}
+cleanupChatter();
+execute(`
+  INSERT INTO users (twitch_user_id, login, display_name, avatar_url, twitch_created_at, first_seen_at, last_seen_at)
+  VALUES ('${chatterVoter}', 'chatter_voter', 'Chatter Voter', '', '2020-01-01T00:00:00.000Z', '2026-11-11T00:00:00.000Z', '2026-11-11T00:00:00.000Z');
+  INSERT INTO candidates (id, nomination_id, name, image_url, twitch_user_id, twitch_login, enabled, sort_order) VALUES
+    ('chatter-__it_a__', 'chatter', 'It A', '', '__it_a__', 'it_a', 1, 9001),
+    ('chatter-__it_b__', 'chatter', 'It B', '', '__it_b__', 'it_b', 1, 9002),
+    ('chatter-__it_empty__', 'chatter', 'It Empty', '', '__it_empty__', 'it_empty', 1, 9003);
+  INSERT INTO votes (nomination_id, candidate_id, twitch_user_id, created_at, updated_at, status)
+  VALUES ('chatter', 'chatter-__it_a__', '${chatterVoter}', '2026-11-11T00:00:00.000Z', '2026-11-11T00:00:00.000Z', 'valid');
+`);
+// Тот же запрос, что в castVote (functions/api/[[path]].ts) перед проверкой лимита.
+const chatterEntriesQuery = `
+  SELECT c.twitch_login AS login, c.enabled AS candidateEnabled,
+         (SELECT COUNT(*) FROM vote_history h WHERE h.vote_id = v.id) AS changes
+  FROM votes v JOIN candidates c ON c.id = v.candidate_id
+  WHERE v.nomination_id = 'chatter' AND v.twitch_user_id = '${chatterVoter}'`;
+const limitReached = row => row.candidateEnabled === 1 && 1 + row.changes >= 2;
+let chatterState = execute(chatterEntriesQuery)[0].results[0];
+assert.equal(chatterState.changes, 0);
+assert.equal(limitReached(chatterState), false, 'после первого голоса можно один раз изменить ник');
+execute(`
+  INSERT INTO vote_history (vote_id, previous_candidate_id, new_candidate_id, changed_at)
+  SELECT id, candidate_id, 'chatter-__it_b__', '2026-11-11T00:01:00.000Z' FROM votes WHERE twitch_user_id = '${chatterVoter}' AND nomination_id = 'chatter';
+  UPDATE votes SET candidate_id = 'chatter-__it_b__', updated_at = '2026-11-11T00:01:00.000Z' WHERE twitch_user_id = '${chatterVoter}' AND nomination_id = 'chatter';
+`);
+chatterState = execute(chatterEntriesQuery)[0].results[0];
+assert.equal(chatterState.login, 'it_b');
+assert.equal(chatterState.changes, 1);
+assert.equal(limitReached(chatterState), true, 'после второго ввода лимит исчерпан');
+execute(`UPDATE candidates SET enabled = 0 WHERE id = 'chatter-__it_b__';`);
+chatterState = execute(chatterEntriesQuery)[0].results[0];
+assert.equal(limitReached(chatterState), false, 'если модератор снял ник, зритель может выбрать другого');
+execute(`UPDATE candidates SET enabled = 1 WHERE id = 'chatter-__it_b__';`);
+
+// Реальный SQL фиксации итогов из finalizeResults: ник без голосов не должен попасть в result_entries.
+const apiSource = readFileSync(new URL('../functions/api/[[path]].ts', import.meta.url), 'utf8');
+const finalizeSql = apiSource.match(/(INSERT INTO result_entries \(snapshot_id[\s\S]*?)`\)\.bind\(snapshotId\)/)?.[1];
+assert.ok(finalizeSql, 'не найден SQL фиксации итогов в finalizeResults');
+execute(`
+  INSERT INTO results_snapshots (id, created_at, revision, status, created_by)
+  VALUES ('${chatterSnapshot}', '2026-11-11T00:02:00.000Z', (SELECT COALESCE(MAX(revision), 0) + 1 FROM results_snapshots), 'final', 'integration-test');
+  ${finalizeSql.replace('SELECT ?, r.nomination_id', `SELECT '${chatterSnapshot}', r.nomination_id`)};
+`);
+const chatterEntries = execute(`
+  SELECT candidate_id AS candidateId, vote_count AS voteCount FROM result_entries
+  WHERE snapshot_id = '${chatterSnapshot}' AND nomination_id = 'chatter' AND candidate_id LIKE 'chatter-__it_%';
+  SELECT COUNT(*) AS emptyRegular FROM result_entries
+  WHERE snapshot_id = '${chatterSnapshot}' AND nomination_id <> 'chatter' AND vote_count = 0;
+`);
+assert.deepEqual(chatterEntries[0].results, [{ candidateId: 'chatter-__it_b__', voteCount: 1 }]);
+assert.ok(chatterEntries[1].results[0].emptyRegular > 0, 'в обычных номинациях кандидаты с 0 голосов остаются в рейтинге');
+cleanupChatter();
+
+// Обезличивание после церемонии (scripts/anonymize-after-awards.sql). Выполняется последним:
+// скрипт удаляет всех пользователей и голоса локальной базы.
+execute(`
+  INSERT INTO users (twitch_user_id, login, display_name, avatar_url, twitch_created_at, first_seen_at, last_seen_at) VALUES
+    ('__anon_author__', 'anon_author', 'Anon Author', 'https://static-cdn.jtvnw.net/a.png', '2020', '2020', '2020'),
+    ('__anon_other__', 'anon_other', 'Anon Other', 'https://static-cdn.jtvnw.net/b.png', '2020', '2020', '2020');
+  INSERT INTO custom_award_proposals (twitch_user_id, award_title, recipient, status, created_at, updated_at) VALUES
+    ('__anon_author__', 'Награда', 'Кому', 'valid', 'x', 'x'),
+    ('__anon_other__', 'Другая', 'Кому', 'valid', 'x', 'x');
+  INSERT INTO custom_award_proposal_history (twitch_user_id, previous_award_title, previous_recipient, new_award_title, new_recipient, changed_at)
+  VALUES ('__anon_other__', 'Старая', 'Кому', 'Другая', 'Кому', 'x');
+  DELETE FROM custom_award_selection;
+  INSERT INTO custom_award_selection (id, twitch_user_id, award_title, recipient, selected_at, selected_by)
+  VALUES (1, '__anon_author__', 'Награда', 'Кому', 'x', 'integration-test');
+  INSERT INTO votes (nomination_id, candidate_id, twitch_user_id, created_at, updated_at, status)
+  VALUES ('game', 'game-1', '__anon_other__', 'x', 'x', 'valid');
+`);
+executeFile(fileURLToPath(new URL('./anonymize-after-awards.sql', import.meta.url)));
+const anonymized = execute(`
+  SELECT twitch_user_id AS id, login, avatar_url AS avatarUrl FROM users;
+  SELECT twitch_user_id AS id FROM custom_award_proposals;
+  SELECT COUNT(*) AS count FROM votes;
+  SELECT COUNT(*) AS count FROM custom_award_proposal_history;
+  SELECT twitch_user_id AS id FROM custom_award_selection;
+`);
+assert.deepEqual(anonymized[0].results, [{ id: '__anon_author__', login: 'anon_author', avatarUrl: '' }]);
+assert.deepEqual(anonymized[1].results, [{ id: '__anon_author__' }]);
+assert.equal(anonymized[2].results[0].count, 0);
+assert.equal(anonymized[3].results[0].count, 0);
+assert.deepEqual(anonymized[4].results, [{ id: '__anon_author__' }]);
+execute(`
+  DELETE FROM custom_award_selection;
+  DELETE FROM custom_award_proposals;
+  DELETE FROM users;
+`);
+
+console.log('D1 integration: category order, 22 renamed clips, vote preservation, publication cycles, independent custom award disclosure, chatter entry limit, chatter results without empty nicks and anonymization verified.');

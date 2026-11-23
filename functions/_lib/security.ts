@@ -23,17 +23,21 @@ export async function getSession(request: Request, env: Env): Promise<SessionUse
   if (!raw) return null;
   const sessionHash = await secretHash(raw, env.SESSION_SECRET);
   const row = await env.DB.prepare(`
-    SELECT s.id_hash, s.csrf_token, s.twitch_user_id, s.expires_at,
+    SELECT s.id_hash, s.csrf_token, s.twitch_user_id, s.expires_at, s.last_seen_at,
            u.login, u.display_name, u.avatar_url, u.twitch_created_at, u.first_seen_at
     FROM sessions s JOIN users u ON u.twitch_user_id = s.twitch_user_id
     WHERE s.id_hash = ? AND s.expires_at > ?
   `).bind(sessionHash, now()).first<Record<string, string>>();
   if (!row) return null;
-  const timestamp = now();
-  await env.DB.batch([
-    env.DB.prepare('UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?').bind(timestamp, sessionHash),
-    env.DB.prepare('UPDATE users SET last_seen_at = ? WHERE twitch_user_id = ?').bind(timestamp, row.twitch_user_id),
-  ]);
+  // Обновляем «последний визит» не чаще раза в 5 минут — меньше записей в D1 на каждый запрос.
+  const lastSeen = Date.parse(row.last_seen_at);
+  if (!Number.isFinite(lastSeen) || lastSeen < Date.now() - 5 * 60_000) {
+    const timestamp = now();
+    await env.DB.batch([
+      env.DB.prepare('UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?').bind(timestamp, sessionHash),
+      env.DB.prepare('UPDATE users SET last_seen_at = ? WHERE twitch_user_id = ?').bind(timestamp, row.twitch_user_id),
+    ]);
+  }
   return {
     sessionHash,
     csrfToken: row.csrf_token,

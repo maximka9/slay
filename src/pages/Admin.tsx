@@ -18,6 +18,7 @@ import {
 import { Layout } from '../components/Layout';
 import { useAuth } from '../components/AuthProvider';
 import { api, mutation, type VotingData } from '../lib/api';
+import { votesLabel } from '../lib/plural';
 import { useAdminDialog } from '../components/admin/AdminDialog';
 
 type Overview = {
@@ -99,14 +100,8 @@ type AdminCandidate = {
   twitchLogin: string | null;
   enabled: number;
   validVotes?: number;
+  totalVotes?: number;
 };
-function plural(count: number) {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'голос';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'голоса';
-  return 'голосов';
-}
 type AuditAction = {
   id: number;
   action: string;
@@ -583,6 +578,8 @@ export function Admin() {
     overview.counts.validVotes > 0 || votingStatus !== 'preparation';
   const chatterCandidates = candidates
     .filter((candidate) => candidate.nominationId === 'chatter')
+    // Ники, за которые никто сейчас не голосует (зритель передумал), не показываем — это просто мусор.
+    .filter((candidate) => (candidate.totalVotes ?? 0) > 0 || candidate.enabled !== 1)
     .sort((a, b) => (b.enabled - a.enabled) || ((b.validVotes ?? 0) - (a.validVotes ?? 0)));
   const readiness = results?.readiness;
 
@@ -887,7 +884,8 @@ export function Admin() {
                 Ники появляются сами, когда зрители их вписывают. Побеждает ник
                 с наибольшим числом учтённых голосов. Голосовать за себя нельзя.
                 Снятый ник не участвует в подсчёте, и за него больше нельзя
-                проголосовать.
+                проголосовать. Ники, за которые сейчас никто не голосует,
+                скрыты. Один зритель может вписать ник не больше 2 раз.
               </p>
             </div>
           </div>
@@ -905,7 +903,7 @@ export function Admin() {
                   </span>
                   <span className="chatter-votes">
                     {candidate.enabled === 1
-                      ? `${candidate.validVotes ?? 0} ${plural(candidate.validVotes ?? 0)}`
+                      ? votesLabel(candidate.validVotes ?? 0)
                       : 'снят'}
                   </span>
                   <button

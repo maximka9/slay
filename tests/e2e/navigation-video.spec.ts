@@ -3,7 +3,7 @@ import { awards } from '../../src/data/awards';
 
 const game = awards.categories.find(category => category.id === 'game')!;
 const votingData = {
-  voting: { status: 'open', chatterFreeInput: false },
+  voting: { status: 'open', chatterFreeInput: true },
   nominations: [{
     id: game.id, title: game.title, description: game.intro, sortOrder: 2,
     enabled: true, canVote: true, unavailableReason: null,

@@ -74,7 +74,7 @@ npx wrangler d1 execute camca63-awards-2026 --remote --file scripts/reset-test-d
 1. Убедитесь, что репозиторий `maximka9/slay` содержит актуальную ветку `main`.
 2. В Cloudflare Dashboard откройте **Workers & Pages → Create → Pages → Connect to Git** и выберите репозиторий.
 3. Укажите production branch `main`, build command `npm run build`, output directory `dist`.
-4. В настройках Pages откройте **Settings → Bindings → D1 database bindings**. Добавьте binding с именем `DB` и выберите `camca63-awards-2026` для Preview и Production.
+4. База D1 подключается через `wrangler.jsonc` — этот файл главнее настроек в панели Cloudflare (binding `DB` в панели менять не получится). **Production** использует `camca63-awards-2026`. **Preview** (каждая ветка и Pull Request получают адрес `*.slay-e4l.pages.dev`) должен работать с отдельной базой, иначе код из непроверенной ветки пишет в настоящие голоса. Настройка отдельной preview-базы — в разделе «Отдельная база для preview» ниже.
 5. В **Settings → Variables and Secrets** добавьте зашифрованные Production secrets. Переменная R2 нужна только при использовании отдельного медиадомена:
 
 | Имя | Значение |
@@ -136,7 +136,7 @@ npm run db:backup
 
 Хранятся Twitch User ID, логин, отображаемое имя, аватар, дата создания Twitch-аккаунта, даты участия и выборы. Email и полный IP не собираются. Сессионные cookie имеют `HttpOnly`, `SameSite=Lax` и `Secure` на HTTPS; в D1 находится только хеш идентификатора сессии.
 
-После премии сначала создайте резервную копию и убедитесь, что финальный снимок опубликован. Скрипт `scripts/anonymize-after-awards.sql` удаляет сессии, OAuth state, rate-limit записи, индивидуальные голоса и пользователей, очищает персональные поля аудита, но сохраняет агрегированные снимки и опубликованные результаты:
+После премии сначала создайте резервную копию и убедитесь, что финальный снимок опубликован. Скрипт `scripts/anonymize-after-awards.sql` удаляет сессии, OAuth state, rate-limit записи, индивидуальные голоса и их историю, все невыбранные предложения «Вашей номинации» и пользователей, очищает персональные поля аудита. Сохраняются агрегированные снимки, опубликованные результаты и выбранная «Ваша номинация» вместе с логином её автора (он и так показан публично):
 
 ```powershell
 npx wrangler d1 execute camca63-awards-2026 --remote --file scripts/anonymize-after-awards.sql
@@ -145,3 +145,34 @@ npx wrangler d1 execute camca63-awards-2026 --remote --file scripts/anonymize-af
 Команда необратима для рабочей базы, поэтому её запускают вручную только после проверки резервной копии.
 
 Голоса ограничиваются по хешу постоянного Twitch User ID, поэтому смена сессии не обходит лимит. OAuth endpoints ограничиваются по необратимому солёному хешу сетевого сигнала; исходный IP в D1 не записывается. Старые rate-limit окна удаляются пакетно.
+
+
+## Отдельная база для preview
+
+Делается один раз. Пока это не сделано, preview-сборки подключены к боевой базе.
+
+```powershell
+npx wrangler d1 create camca63-awards-2026-preview
+npx wrangler d1 migrations apply camca63-awards-2026-preview --remote
+```
+
+Первая команда выведет `database_id` новой базы. В `wrangler.jsonc` добавьте блок `env.preview` (после массива `d1_databases`, через запятую), подставив этот id:
+
+```jsonc
+  "env": {
+    "preview": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "camca63-awards-2026-preview",
+          "database_id": "<id новой базы>",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+```
+
+Production при этом не меняется: верхний `d1_databases` продолжает указывать на `camca63-awards-2026`.
+
+Вход через Twitch на preview-адресах не работает: Twitch всегда возвращает на основной домен из `TWITCH_REDIRECT_URI`. Это ожидаемо — preview нужен, чтобы посмотреть вёрстку и публичные страницы.

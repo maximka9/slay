@@ -9,10 +9,17 @@ export type VotingNomination = {
   enabled: boolean; canVote: boolean; unavailableReason: string | null; candidates: VotingCandidate[];
 };
 export type VotingData = {
+  // chatterFreeInput устарело, всегда true.
   voting: { status: 'preparation' | 'open' | 'closed'; chatterFreeInput: boolean };
   nominations: VotingNomination[];
 };
-export type MyVote = { nominationId: string; candidateId: string; candidateName: string; candidateLogin?: string | null; updatedAt: string; status: 'valid' | 'excluded' };
+export type MyVote = {
+  nominationId: string; candidateId: string; candidateName: string; candidateLogin?: string | null; updatedAt: string; status: 'valid' | 'excluded';
+  // 0 — ник снят модератором.
+  candidateEnabled?: number;
+  // Сколько раз зритель менял голос (строки vote_history).
+  changeCount?: number;
+};
 export type CustomAwardProposal = {
   awardTitle: string;
   recipient: string;
