@@ -98,3 +98,67 @@ test('плитка номинации на главной ведёт к голо
   await expect(page).toHaveURL(/\/vote#vote-game$/);
   await expect(page.locator('#vote-game')).toBeInViewport();
 });
+
+async function openClip(page: Page, name: string) {
+  await mockPublicApi(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/vote');
+  await page.getByRole('article').filter({ hasText: name }).getByRole('button', { name: 'Смотреть клип' }).click();
+  const dialog = page.getByRole('dialog', { name });
+  await expect(dialog.locator('.video-stage')).toHaveAttribute('data-video-width', /\d+/);
+  return dialog;
+}
+
+test('плеер одиночного клипа: без «Следующее», без подсказок, свои элементы управления', async ({ page }) => {
+  const dialog = await openClip(page, 'Clair Obscur: Expedition 33');
+  await expect(dialog.locator('video')).not.toHaveAttribute('controls', /.*/);
+  await expect(dialog.getByRole('button', { name: /Следующее/ })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Предыдущее видео' })).toHaveCount(0);
+  await expect(dialog.getByText(/Видео 1 из 1/)).toHaveCount(0);
+  await expect(dialog.locator('kbd')).toHaveCount(0);
+  await expect(dialog.getByRole('slider', { name: 'Перемотка' })).toBeVisible();
+  // Ползунок громкости — справа от значка звука.
+  const [mute, volume] = await Promise.all([
+    dialog.getByRole('button', { name: 'Выключить звук' }).boundingBox(),
+    dialog.getByRole('slider', { name: 'Громкость' }).boundingBox(),
+  ]);
+  expect(volume!.x).toBeGreaterThan(mute!.x + mute!.width - 1);
+});
+
+test('кнопка звука синхронизирована с реальным звуком и запоминается', async ({ page }) => {
+  const dialog = await openClip(page, 'Clair Obscur: Expedition 33');
+  const video = dialog.locator('video');
+  await dialog.getByRole('button', { name: 'Выключить звук' }).click();
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.muted)).toBe(true);
+  await expect(dialog.getByRole('slider', { name: 'Громкость' })).toHaveValue('0');
+  // Звук выключили не нашей кнопкой (например, системой) — кнопка всё равно обновляется.
+  await video.evaluate((element: HTMLVideoElement) => { element.muted = false; });
+  await expect(dialog.getByRole('button', { name: 'Выключить звук' })).toBeVisible();
+  await page.keyboard.press('m');
+  await expect(dialog.getByRole('button', { name: 'Включить звук' })).toBeVisible();
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.muted)).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole('article').filter({ hasText: 'Clair Obscur: Expedition 33' }).getByRole('button', { name: 'Смотреть клип' }).click();
+  const reopened = page.getByRole('dialog', { name: 'Clair Obscur: Expedition 33' });
+  await expect(reopened.getByRole('button', { name: 'Включить звук' })).toBeVisible();
+  await expect.poll(() => reopened.locator('video').evaluate((element: HTMLVideoElement) => element.muted)).toBe(true);
+});
+
+test('«Сначала» перематывает ролик без бесконечной загрузки', async ({ page }) => {
+  const dialog = await openClip(page, 'Clair Obscur: Expedition 33');
+  const video = dialog.locator('video');
+  await expect(dialog.locator('.video-loading')).toHaveCount(0);
+  await video.evaluate((element: HTMLVideoElement) => { element.currentTime = 3; });
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(2);
+  await dialog.getByRole('button', { name: 'Сначала' }).click();
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeLessThan(1.5);
+  await page.waitForTimeout(600);
+  await expect(dialog.locator('.video-loading')).toHaveCount(0);
+  // После окончания ролика «Смотреть ещё раз» тоже запускает его заново.
+  await video.dispatchEvent('ended');
+  await expect(dialog.getByRole('status')).toContainText('РОЛИК ЗАКОНЧИЛСЯ');
+  await dialog.getByRole('button', { name: 'Смотреть ещё раз' }).click();
+  await expect(dialog.locator('video')).toBeVisible();
+  await expect(dialog.locator('.video-loading')).toHaveCount(0, { timeout: 10_000 });
+});
